@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "arkade": {
+      "source": "arkade-os/skill",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "c0e30bee61e8537be2c48377cdeca165a49f3aeec932e5ca0fa5ffd887a65b4f"
+    }
+  }
+}

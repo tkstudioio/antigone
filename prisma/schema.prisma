@@ -1,0 +1,235 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Account {
+  pubkey    String   @id @map("pubkey")
+  username  String   @map("username")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  // relations
+  keysAsSeller    Key[]     @relation("SellerKeys")
+  keysAsReserved  Key[]     @relation("ReservedKeys")
+  keysAsBuyer     Key[]     @relation("BuyerKeys")
+  messages        Message[]
+  buyerEscrows    Escrow[]  @relation("EscrowBuyer")
+  sellerEscrows   Escrow[]  @relation("EscrowSeller")
+  arbiterEscrows  Escrow[]  @relation("EscrowArbiter")
+  reviewsReceived Review[]  @relation("ReviewReceived")
+  reviewsGiven    Review[]  @relation("ReviewGiven")
+  favorites       Favorite[]
+  buyerOrders     Order[]   @relation("OrderBuyer")
+  sellerOrders    Order[]   @relation("OrderSeller")
+  arbiterOrders   Order[]   @relation("OrderArbiter")
+
+  @@unique([pubkey], name: "idx_account_pubkey")
+  @@map("account")
+}
+
+model Challenge {
+  nonce  String   @id @map("nonce")
+  pubkey String   @unique @map("pubkey")
+  expiry DateTime @map("expiry") @db.Timestamp(6)
+
+  @@map("challenge")
+}
+
+model Product {
+  id          Int      @id @default(autoincrement()) @map("id")
+  name        String   @map("name")
+  slug        String   @unique @map("slug")
+  description String?  @map("description")
+  rating      Float?   @map("rating")
+  imageUrl    String?  @map("image_url")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+
+  keys      Key[]
+  favorites Favorite[]
+
+  @@map("product")
+}
+
+model Key {
+  id            Int       @id @default(autoincrement()) @map("id")
+  productId     Int       @map("product_id")
+  sellerPubkey  String    @map("seller_pubkey")
+  code          String    @map("code")
+  codeHash      String?   @map("code_hash")
+  price         Int       @map("price")
+  reservedBy    String?   @map("reserved_by")
+  reservedUntil DateTime? @map("reserved_until") @db.Timestamp(6)
+  orderId       Int?      @map("order_id")
+  buyerPubkey   String?   @map("buyer_pubkey")
+  refunded      Boolean   @default(false) @map("refunded")
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
+
+  product          Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  seller           Account   @relation("SellerKeys", fields: [sellerPubkey], references: [pubkey])
+  reservedByAcct   Account?  @relation("ReservedKeys", fields: [reservedBy], references: [pubkey])
+  buyer            Account?  @relation("BuyerKeys", fields: [buyerPubkey], references: [pubkey])
+  order            Order?    @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@index([productId], name: "idx_key_product_id")
+  @@index([sellerPubkey], name: "idx_key_seller_pubkey")
+  @@index([sellerPubkey, productId], name: "idx_key_seller_product")
+  @@index([sellerPubkey, productId, codeHash], name: "idx_key_seller_product_codehash")
+  @@index([sellerPubkey, productId, price], name: "idx_key_seller_product_price")
+  @@index([reservedBy, reservedUntil], name: "idx_key_reserved_by_until")
+  @@index([orderId], name: "idx_key_order_id")
+  @@map("key")
+}
+
+model Favorite {
+  id            Int      @id @default(autoincrement()) @map("id")
+  accountPubkey String   @map("account_pubkey")
+  productId     Int      @map("product_id")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+
+  account Account @relation(fields: [accountPubkey], references: [pubkey], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([accountPubkey, productId], name: "uq_favorite_account_product")
+  @@map("favorite")
+}
+
+model Chat {
+  id        Int      @id @default(autoincrement()) @map("id")
+  orderId   Int      @unique @map("order_id")
+  signature String   @map("signature")
+  status    String   @default("open") @map("status")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+
+  order    Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  messages Message[]
+  escrow   Escrow?   @relation("EscrowChat")
+
+  @@map("chat")
+}
+
+model Message {
+  id             Int      @id @default(autoincrement()) @map("id")
+  chatId         Int      @map("chat_id")
+  message        String?  @map("message")
+  senderPubkey   String?  @map("sender_pubkey")
+  signature      String?  @map("signature")
+  isSystem       Boolean? @default(false) @map("is_system")
+  sentAt         DateTime @default(now()) @map("sent_at") @db.Timestamp(6)
+  attachmentKey  String?  @map("attachment_key")
+  attachmentName String?  @map("attachment_name")
+  attachmentType String?  @map("attachment_type")
+  attachmentSize Int?     @map("attachment_size")
+
+  chat   Chat         @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  sender Account?     @relation(fields: [senderPubkey], references: [pubkey])
+  keys   MessageKey[]
+
+  @@index([chatId], name: "idx_message_chat_id")
+  @@map("message")
+}
+
+model MessageKey {
+  id              Int    @id @default(autoincrement()) @map("id")
+  messageId       Int    @map("message_id")
+  recipientPubkey String @map("recipient_pubkey")
+  wrapperPubkey   String @map("wrapper_pubkey")
+  wrappedCek      String @map("wrapped_cek")
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, recipientPubkey], name: "uq_message_recipient")
+  @@index([messageId], name: "idx_message_key_message_id")
+  @@map("message_key")
+}
+
+model Escrow {
+  address                  String    @id @map("address")
+  nonce                    String    @map("nonce")
+  buyerPubkey              String    @map("buyer_pubkey")
+  sellerPubkey             String    @map("seller_pubkey")
+  serverPubkey             String    @map("server_pubkey")
+  arbiterPubkey            String?   @map("arbiter_pubkey")
+  price                    Int       @map("price")
+  platformFee              Int       @default(0) @map("platform_fee")
+  exitDelay                Int       @map("exit_delay")
+  chatId                   Int       @unique @map("chat_id")
+  status                   String    @default("awaitingFunds") @map("status")
+  sellerSignedCollabPsbt   String?   @map("seller_signed_collab_psbt")
+  releaseCheckpointPsbts   String?   @map("release_checkpoint_psbts")
+  collabArkTxid            String?   @map("collab_ark_txid")
+  serverSignedCheckpoints  String?   @map("server_signed_checkpoints")
+  buyerSignedCheckpoints   String?   @map("buyer_signed_checkpoints")
+  disputeFavouredSignedArkPsbt   String?   @map("dispute_favoured_signed_ark_psbt")
+  disputeCheckpointPsbts         String?   @map("dispute_checkpoint_psbts")
+  disputeServerSignedCheckpoints String?   @map("dispute_server_signed_checkpoints")
+  disputeAdminSignedCheckpoints  String?   @map("dispute_admin_signed_checkpoints")
+  disputeArkTxid                 String?   @map("dispute_ark_txid")
+  settledAt                      DateTime? @map("settled_at") @db.Timestamp(6)
+  // Reserved for Stage 2 (unilateral CSV exit):
+  disputeExitState               String?   @map("dispute_exit_state")
+  createdAt                DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
+  fundedAt                 DateTime? @map("funded_at") @db.Timestamp(6)
+  releasedAt               DateTime? @map("released_at") @db.Timestamp(6)
+
+  buyer   Account  @relation("EscrowBuyer", fields: [buyerPubkey], references: [pubkey])
+  seller  Account  @relation("EscrowSeller", fields: [sellerPubkey], references: [pubkey])
+  arbiter Account? @relation("EscrowArbiter", fields: [arbiterPubkey], references: [pubkey])
+  chat    Chat     @relation("EscrowChat", fields: [chatId], references: [id], onDelete: Cascade)
+  reviews Review[]
+  order   Order?
+
+  @@index([chatId], name: "idx_escrow_chat_id")
+  @@map("escrow")
+}
+
+model Order {
+  id                Int       @id @default(autoincrement()) @map("id")
+  buyerPubkey       String    @map("buyer_pubkey")
+  sellerPubkey      String    @map("seller_pubkey")
+  arbiterPubkey     String?   @map("arbiter_pubkey")
+  totalSats         Int       @map("total_sats")
+  platformFee       Int       @default(0) @map("platform_fee")
+  adminDisputeShare Int?      @map("admin_dispute_share")
+  status            String    @default("pending") @map("status")
+  escrowAddress     String?   @unique @map("escrow_address")
+  refundAmount      Int?      @map("refund_amount")
+  conclusionStatus  String?   @map("conclusion_status")
+  favouredRole      String?   @map("favoured_role")
+  refundSignature   String?   @map("refund_signature")
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
+  completedAt       DateTime? @map("completed_at") @db.Timestamp(6)
+  concludedAt       DateTime? @map("concluded_at") @db.Timestamp(6)
+
+  buyer   Account  @relation("OrderBuyer", fields: [buyerPubkey], references: [pubkey])
+  seller  Account  @relation("OrderSeller", fields: [sellerPubkey], references: [pubkey])
+  arbiter Account? @relation("OrderArbiter", fields: [arbiterPubkey], references: [pubkey])
+  keys    Key[]
+  chat    Chat?
+  escrow  Escrow?  @relation(fields: [escrowAddress], references: [address])
+
+  @@index([buyerPubkey], name: "idx_order_buyer_pubkey")
+  @@index([sellerPubkey], name: "idx_order_seller_pubkey")
+  @@map("order")
+}
+
+model Review {
+  id              Int      @id @default(autoincrement()) @map("id")
+  reviewedPubkey  String   @map("reviewed_pubkey")
+  reviewerPubkey  String   @map("reviewer_pubkey")
+  reviewerRole    String   @map("reviewer_role")
+  signature       String   @map("signature")
+  rating          Int      @map("rating")
+  message         String   @map("message")
+  escrowAddress   String   @map("escrow_address")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+
+  reviewed Account @relation("ReviewReceived", fields: [reviewedPubkey], references: [pubkey])
+  reviewer Account @relation("ReviewGiven", fields: [reviewerPubkey], references: [pubkey])
+  escrow   Escrow  @relation(fields: [escrowAddress], references: [address], onDelete: Cascade)
+
+  @@unique([escrowAddress, reviewerPubkey], name: "idx_review_escrow_reviewer")
+  @@index([reviewedPubkey], name: "idx_review_reviewed_pubkey")
+  @@map("review")
+}

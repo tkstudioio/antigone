@@ -1,0 +1,39 @@
+<svg width="240" height="200" viewBox="0 0 240 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- MOCK placeholder illustration — replace with final asset -->
+  <defs>
+    <clipPath id="moon">
+      <circle cx="120" cy="95" r="70" />
+    </clipPath>
+  </defs>
+
+  <!-- night-sky disc -->
+  <circle cx="120" cy="95" r="70" fill="#1a2338" />
+  <g clip-path="url(#moon)">
+    <circle cx="92" cy="60" r="1.6" fill="#5b6478" />
+    <circle cx="150" cy="52" r="1.2" fill="#5b6478" />
+    <circle cx="170" cy="80" r="1.6" fill="#5b6478" />
+    <circle cx="78" cy="92" r="1.2" fill="#5b6478" />
+    <circle cx="138" cy="44" r="1" fill="#5b6478" />
+    <circle cx="112" cy="50" r="1.2" fill="#5b6478" />
+
+    <!-- back tents -->
+    <path d="M120 150 L150 92 L180 150 Z" fill="#8a93a6" />
+    <path d="M95 150 L120 100 L145 150 Z" fill="#9ba3b4" />
+  </g>
+
+  <!-- ground -->
+  <ellipse cx="120" cy="165" rx="92" ry="9" fill="#1a2338" />
+
+  <!-- front tent -->
+  <path d="M60 165 L92 108 L124 165 Z" fill="#6f7890" />
+  <path d="M92 108 L92 165 L124 165 Z" fill="#5b6478" />
+
+  <!-- seated figure -->
+  <circle cx="118" cy="138" r="9" fill="#33394f" />
+  <path d="M104 165 C104 150 112 144 120 144 C128 144 134 152 134 165 Z" fill="#33394f" />
+
+  <!-- campfire -->
+  <path d="M150 165 C146 156 152 152 150 144 C158 150 160 158 156 165 Z" fill="#f98fc4" />
+  <path d="M152 165 C150 160 153 157 152 153 C156 157 157 161 155 165 Z" fill="#fcd0e6" />
+  <rect x="142" y="164" width="20" height="3" rx="1.5" fill="#4a5168" />
+</svg>

@@ -1,0 +1,221 @@
+{
+  "main": {
+    "id": "89226c365604f377",
+    "type": "split",
+    "children": [
+      {
+        "id": "e744730a14b18242",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "c2dea5efcfb4df1a",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "README.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "README"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "568146874c8c8c17",
+    "type": "split",
+    "children": [
+      {
+        "id": "8be95ac467e24cc7",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "2abb08a1b88bf312",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "Esplora risorse"
+            }
+          },
+          {
+            "id": "d985a94d951fc591",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "Ricerca"
+            }
+          },
+          {
+            "id": "516ddb1a9cdff16e",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "Segnalibri"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "right": {
+    "id": "6b559e632ba18eff",
+    "type": "split",
+    "children": [
+      {
+        "id": "eacc0dc46f138660",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "ddb68be7d59c309b",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "design/report-requisiti-design.md",
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "Riferimenti a report-requisiti-design"
+            }
+          },
+          {
+            "id": "8bdc993f6005cfce",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "file": "design/report-requisiti-design.md",
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "Collegamenti in uscita da report-requisiti-design"
+            }
+          },
+          {
+            "id": "5a969e21276011ba",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "Etichette"
+            }
+          },
+          {
+            "id": "52450cdebf0658f9",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "Tutte le proprietà"
+            }
+          },
+          {
+            "id": "5d857283ddfe8537",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "design/report-requisiti-design.md",
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Struttura di report-requisiti-design"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:Apri selezione rapida": false,
+      "graph:Apri vista grafo": false,
+      "canvas:Crea nuova lavagna": false,
+      "daily-notes:Apri nota del giorno": false,
+      "templates:Inserisci modello": false,
+      "command-palette:Apri riquadro comandi": false,
+      "bases:Crea nuova Base": false
+    }
+  },
+  "active": "c2dea5efcfb4df1a",
+  "lastOpenFiles": [
+    "report-requisiti-design.md",
+    "Reference/Data and entity catalog.md",
+    "Domains/07 — Admin area and disputes.md",
+    "Domains/06 — Wallet.md",
+    "Domains/05 — Stock management.md",
+    "Domains/04 — Orders, detail and chat.md",
+    "Domains/03 — Cart and checkout.md",
+    "Domains/02 — Public storefront.md",
+    "Domains/01 — Authentication and identity.md",
+    "Foundations/State machine — order and escrow.md",
+    "Foundations/Product overview and principles.md",
+    "Foundations/Personas and actors.md",
+    "Foundations/Glossary.md",
+    "Reference/Cross-cutting requirements.md",
+    "README.md",
+    "Glossary.md",
+    "Product overview and principles.md",
+    "Reference",
+    "Domains",
+    "Foundations",
+    "State machine — order and escrow.md",
+    "node_modules/eslint-plugin-react/README.md",
+    "auth/flows.md",
+    "account.md",
+    "account/cart.md",
+    "lifecycle.md",
+    "2026-06-30.md",
+    "Senza nome.base",
+    "Senza nome.canvas",
+    "Senza nome 1.canvas",
+    "auth.md",
+    "admin.md"
+  ]
+}
