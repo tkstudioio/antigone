@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 
 export function LoginActions() {
   return (
-    <div className="flex flex-col gap-sm">
+    <div className="flex flex-col gap-2">
       <Button size={"lg"} asChild>
         <Link href="/create">Create an account</Link>
       </Button>

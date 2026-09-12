@@ -23,7 +23,7 @@ export function OrderStepper({ orderStatus, escrowStatus, role }: Props) {
 
   if (timeline.isDispute) {
     return (
-      <div className="flex flex-col gap-2 rounded-card border border-destructive/40 bg-destructive/5 p-4">
+      <div className="flex flex-col gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-4">
         <div className="flex items-center gap-2 text-sm font-medium text-destructive">
           <AlertTriangle className="size-4 shrink-0" />
           <span>{timeline.disputeLabel}</span>
@@ -34,7 +34,7 @@ export function OrderStepper({ orderStatus, escrowStatus, role }: Props) {
   }
 
   return (
-    <div className="flex flex-col gap-3 rounded-card border bg-card p-4">
+    <div className="flex flex-col gap-3 rounded-md border bg-card p-4">
       <ol className="flex flex-col">
         {timeline.steps.map((step, i) => {
           const isDone = i < timeline.currentIndex;

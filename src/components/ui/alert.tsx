@@ -4,14 +4,14 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const alertVariants = cva(
-  "group/alert relative grid w-full gap-0.5 rounded-card px-md py-md text-left text-sm has-data-[slot=alert-action]:relative has-data-[slot=alert-action]:pr-18 has-[>svg]:grid-cols-[auto_1fr] has-[>svg]:gap-x-2.5 *:[svg]:row-span-2 *:[svg]:translate-y-0.5 *:[svg]:text-current *:[svg:not([class*='size-'])]:size-4",
+  "group/alert relative grid w-full gap-0.5 rounded-md px-4 py-4 text-left text-sm has-data-[slot=alert-action]:relative has-data-[slot=alert-action]:pr-18 has-[>svg]:grid-cols-[auto_1fr] has-[>svg]:gap-x-2.5 *:[svg]:row-span-2 *:[svg]:translate-y-0.5 *:[svg]:text-current *:[svg:not([class*='size-'])]:size-4",
   {
     variants: {
       action: {
-        primary: "bg-primary/33 text-foreground",
-        negative: "bg-negative/33 text-foreground",
-        positive: "bg-positive/33 text-foreground",
-        muted: "bg-muted/33 text-foreground",
+        primary: "bg-primary/15 text-foreground",
+        negative: "bg-negative/15 text-foreground",
+        positive: "bg-positive/15 text-foreground",
+        muted: "bg-muted text-foreground",
       },
     },
     defaultVariants: {

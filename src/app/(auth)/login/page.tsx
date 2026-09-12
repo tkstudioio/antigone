@@ -16,14 +16,14 @@ export default function LoginPage() {
   const accounts = useAccountsList();
 
   return (
-    <div className="w-full space-y-md">
-      <Button className="fixed top-md right-md" action={"negative"} asChild size={"sm"}>
+    <div className="w-full space-y-4">
+      <Button className="fixed top-4 right-4" action={"negative"} asChild size={"sm"}>
         <Link href={"/"}>
           <X />
         </Link>
       </Button>
       {!isClient ? (
-        <div className="flex justify-center py-lg">
+        <div className="flex justify-center py-8">
           <Loader2 className="size-6 animate-spin text-muted-foreground" />
         </div>
       ) : accounts.length === 0 ? (
@@ -41,7 +41,7 @@ export default function LoginPage() {
             <CardTitle>Sign in</CardTitle>
             <CardDescription>Choose an account to sign in</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-sm">
+          <CardContent className="space-y-2">
             {accounts.map((account) => (
               <AccountListItem key={account.pubkey} account={account} />
             ))}
@@ -49,7 +49,7 @@ export default function LoginPage() {
         </Card>
       )}
 
-      <div className="flex items-center gap-sm">
+      <div className="flex items-center gap-2">
         <Separator className="flex-1" />
         <span className="text-xs text-muted-foreground">or</span>
         <Separator className="flex-1" />

@@ -93,7 +93,7 @@ function PartyTile({
 }) {
   return (
     <div className="flex items-center gap-3">
-      <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-fill ring-1 ring-foreground/10">
+      <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-card ring-1 ring-border">
         <Icon className="size-5 text-muted-foreground" />
       </div>
       <div className="flex min-w-0 flex-col">
@@ -190,9 +190,9 @@ export function AdminDisputeDetail({ orderId }: Props) {
                 <P>Opened on {new Date(order.createdAt).toLocaleDateString("en-US")}</P>
               </div>
 
-              <div className="grid grid-cols-1 gap-md lg:grid-cols-4">
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
                 {/* Left column (1fr): summary + CTA, then lifecycle stepper */}
-                <div className="flex flex-col gap-md lg:col-span-1">
+                <div className="flex flex-col gap-4 lg:col-span-1">
                   <Card>
                     <CardHeader className="pb-0">
                       <CardTitle className="flex items-center gap-2 text-base">
@@ -209,7 +209,7 @@ export function AdminDisputeDetail({ orderId }: Props) {
                       </div>
                       <div className="flex items-center justify-between">
                         <span className="text-muted-foreground">Order total</span>
-                        <span className="font-heading text-lg font-semibold">
+                        <span className="text-lg font-semibold">
                           {formatPrice(order.totalSats)}
                         </span>
                       </div>
@@ -281,7 +281,7 @@ export function AdminDisputeDetail({ orderId }: Props) {
                         </>
                       )}
                     </CardContent>
-                    <CardFooter className="border-t border-foreground/10 pt-md">
+                    <CardFooter className="border-t border-border pt-4">
                       <Button
                         onClick={() => setDialogOpen(true)}
                         disabled={isSettled}
@@ -301,7 +301,7 @@ export function AdminDisputeDetail({ orderId }: Props) {
                 </div>
 
                 {/* Right column (3fr): counterparties, items, chat */}
-                <div className="flex flex-col gap-md lg:col-span-3">
+                <div className="flex flex-col gap-4 lg:col-span-3">
                   <Card>
                     <CardHeader className="pb-0">
                       <CardTitle className="flex items-center gap-2 text-base">
@@ -417,7 +417,7 @@ export function AdminDisputeDetail({ orderId }: Props) {
 
                   {/* Conversation */}
                   <Card className="space-y-0">
-                    <CardHeader className="border-b border-foreground/10 pb-md">
+                    <CardHeader className="border-b border-border pb-4">
                       <CardTitle className="flex items-center gap-2 text-base">
                         <MessagesSquare className="size-4 text-muted-foreground" />
                         Conversation

@@ -53,7 +53,7 @@ function TxRow({ tx }: { tx: ArkTransaction }) {
     <Card>
       <CardHeader>
         <CardTitle
-          className={cn("flex items-center gap-sm", {
+          className={cn("flex items-center gap-2", {
             "text-negative": !isReceived,
             "text-positive": isReceived,
           })}
@@ -65,7 +65,7 @@ function TxRow({ tx }: { tx: ArkTransaction }) {
           )}
           {formatSats(tx.amount)}
 
-          <span className="text-sm text-muted">
+          <span className="text-sm text-muted-foreground">
             {format(new Date(tx.createdAt), "yyyy-MM-dd hh:mm")}
           </span>
         </CardTitle>
@@ -83,7 +83,7 @@ function TxRow({ tx }: { tx: ArkTransaction }) {
 
 function TxRowSkeleton() {
   return (
-    <div className="flex items-center gap-md py-sm">
+    <div className="flex items-center gap-4 py-2">
       <Skeleton className="size-5 shrink-0 rounded-full" />
       <div className="flex-1 min-w-0 space-y-1.5">
         <Skeleton className="h-4 w-28" />
@@ -178,7 +178,7 @@ export function WalletOverview() {
           )}
         </CardContent>
 
-        <CardFooter className="justify-between border-t pt-md">
+        <CardFooter className="justify-between border-t pt-4">
           <span className="text-sm text-muted-foreground">Total</span>
           {isLoading ? (
             <Skeleton className="h-6 w-32" />
@@ -187,12 +187,12 @@ export function WalletOverview() {
           )}
         </CardFooter>
       </Card>
-      <div className="flex items-center gap-sm w-full">
+      <div className="flex items-center gap-2 w-full">
         <SendDialog />
         <ReceiveDialog />
       </div>
       <Large>Latest transactions</Large>
-      <div className="space-y-md">
+      <div className="space-y-4">
         {match(walletTransactionsQuery)
           .with({ isLoading: true }, () => (
             <div className="divide-y divide-border">

@@ -13,7 +13,7 @@ export default function RestorePage() {
   const form = useRestoreAccountForm();
   const mutation = useRestoreAccountMutation();
   return (
-    <div className="w-full space-y-md">
+    <div className="w-full space-y-4">
       <Card>
         <CardHeader>
           <CardTitle>Restore account</CardTitle>
@@ -88,9 +88,7 @@ export default function RestorePage() {
                 name="confirmPassphrase"
                 render={({ field, fieldState }) => (
                   <Field data-invalid={fieldState.invalid}>
-                    <FieldLabel htmlFor="restore-confirm-passphrase">
-                      Confirm passphrase
-                    </FieldLabel>
+                    <FieldLabel htmlFor="restore-confirm-passphrase">Confirm passphrase</FieldLabel>
                     <Input
                       {...field}
                       id="restore-confirm-passphrase"

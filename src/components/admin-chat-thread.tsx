@@ -56,7 +56,7 @@ function AdminMessageBubble({
   return (
     <div className={`flex flex-col gap-0.5 ${align}`}>
       <span className="text-xs text-muted-foreground">{senderLabel}</span>
-      <div className={`max-w-xsmall rounded-lg px-3 py-2 text-sm ${bubbleClass}`}>
+      <div className={`max-w-xs rounded-lg px-3 py-2 text-sm ${bubbleClass}`}>
         {msg.message ?? (msg.attachment == null ? "—" : null)}
         {msg.attachment != null && <MessageAttachment attachment={msg.attachment} />}
       </div>

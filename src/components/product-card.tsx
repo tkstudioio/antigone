@@ -61,7 +61,7 @@ export function ProductCard({ product }: { product: Product }) {
           <div className="cursor-default">{header}</div>
         )}
       </div>
-      <CardContent className="px-0! flex gap-md items-center">
+      <CardContent className="px-0! flex gap-4 items-center">
         <CardTitle className="line-clamp-2">{product.name}</CardTitle>
         <span className="inline-flex items-center gap-0.5">
           {product.rating &&

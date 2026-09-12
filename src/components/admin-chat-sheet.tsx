@@ -14,7 +14,7 @@ export function AdminChatSheet({ chatId, open, onOpenChange }: Props) {
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className="flex w-full flex-col gap-0 data-[side=right]:sm:max-w-xlarge p-0"
+        className="flex w-full flex-col gap-0 data-[side=right]:sm:max-w-xl p-0"
       >
         <SheetHeader className="sr-only">
           <SheetTitle>Admin chat</SheetTitle>

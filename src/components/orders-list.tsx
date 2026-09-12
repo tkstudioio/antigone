@@ -84,7 +84,7 @@ export function OrdersList({ role }: { role: OrderRole }) {
 
                 return (
                   <Link key={row.id} href={`/orders/${row.id}`} className="block">
-                    <Card className="space-y-1 px-md py-3 hover:ring-foreground/20">
+                    <Card className="space-y-1 px-4 py-3 hover:ring-border">
                       {/* Row 1: id + product + status */}
                       <div className="flex items-center gap-2">
                         <span className="font-mono text-xs text-muted-foreground">#{row.id}</span>

@@ -15,13 +15,13 @@ export function ProductStockCard({ stock }: { stock: StockEntry }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-xs">
+        <CardTitle className="flex items-center gap-1">
           <Satoshi />
           {formatPrice(stock?.price)}
         </CardTitle>
         <CardDescription>sold by: {stock.sellerUsername}</CardDescription>
       </CardHeader>
-      <CardFooter className="gap-sm">
+      <CardFooter className="gap-2">
         <Input
           placeholder="Select quantity"
           type="number"

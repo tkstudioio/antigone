@@ -33,7 +33,7 @@ export default async function ProductPage({
   return (
     <>
       <H1>Products</H1>
-      <div className="grid grid-cols-2 gap-md">
+      <div className="grid grid-cols-2 gap-4">
         {initialData.data.map((product) => {
           const hasStock = product.availableKeysCount > 0;
 

@@ -20,14 +20,14 @@ export default async function DashboardLayout({ children }: { children: React.Re
       <AppSidebar />
       <SidebarInset>
         <header className="sticky top-0 z-40 w-full bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/60">
-          <div className="container flex items-center justify-between py-md">
+          <div className="container mx-auto flex items-center justify-between px-4 py-4">
             <Link href="/" className="visible md:invisible">
               <Icon className="h-8" />
             </Link>
             <SidebarTrigger className="md:hidden" />
           </div>
         </header>
-        <main className="container mt-md space-y-lg">{children}</main>
+        <main className="container mx-auto px-4 mt-4 space-y-8">{children}</main>
       </SidebarInset>
     </SidebarProvider>
   );

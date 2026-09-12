@@ -68,7 +68,7 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
           width={256}
           height={256}
           unoptimized
-          className="aspect-video object-cover w-full transition-transform rounded-card"
+          className="aspect-video object-cover w-full transition-transform rounded-md"
         />
       )}
       {cheapestStock && <ProductStockCard stock={cheapestStock} />}

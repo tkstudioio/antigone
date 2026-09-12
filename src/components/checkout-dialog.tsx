@@ -120,17 +120,17 @@ export function CheckoutDialog({ open, onOpenChange }: Props) {
               <CardHeader className="px-0!">
                 <CardTitle>{order.sellerUsername}</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-xs px-0!">
+              <CardContent className="space-y-1 px-0!">
                 {order.items.map((item, index) => (
                   <div
                     key={index}
                     className="flex items-center justify-between text-sm text-muted-foreground"
                   >
-                    <span className="flex items-center gap-xs">
+                    <span className="flex items-center gap-1">
                       {item.quantity}
                       <X className="inline size-3" />
                       {item.productName}
-                      <span className="text-xs text-muted">
+                      <span className="text-xs text-muted-foreground">
                         (<Satoshi className="inline size-4" />
                         {formatPrice(item.price)})
                       </span>
@@ -143,7 +143,7 @@ export function CheckoutDialog({ open, onOpenChange }: Props) {
                   </div>
                 ))}
                 <div className="flex items-center justify-between text-sm text-muted-foreground">
-                  <span className="flex items-center gap-xs">Platform fee</span>
+                  <span className="flex items-center gap-1">Platform fee</span>
 
                   <span className="font-medium text-foreground">
                     <Satoshi className="inline size-4" />

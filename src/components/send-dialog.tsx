@@ -49,12 +49,10 @@ export function SendDialog() {
           Send
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-medium">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Send Bitcoin</DialogTitle>
-          <DialogDescription>
-            Enter an address and an amount to send Bitcoin.
-          </DialogDescription>
+          <DialogDescription>Enter an address and an amount to send Bitcoin.</DialogDescription>
         </DialogHeader>
         <div className="space-y-4 pt-2">
           <div className="space-y-1.5">

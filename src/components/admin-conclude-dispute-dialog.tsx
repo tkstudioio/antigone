@@ -149,7 +149,7 @@ export function AdminConcludeDisputeDialog({ order, open, onOpenChange }: Props)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-large">
+      <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>
             {isReconclusion ? "Update verdict" : "Conclude dispute"} #{order.id}
@@ -206,9 +206,7 @@ export function AdminConcludeDisputeDialog({ order, open, onOpenChange }: Props)
               <span className="text-xs uppercase tracking-wide text-muted-foreground">
                 Buyer refund
               </span>
-              <span className="font-heading text-base font-semibold">
-                {formatPrice(watchedRefund)}
-              </span>
+              <span className="text-base font-semibold">{formatPrice(watchedRefund)}</span>
             </div>
           </div>
 

@@ -57,7 +57,7 @@ export function OrderSummaryCard({ order }: Props) {
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         <div className="flex items-center gap-3">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-fill ring-1 ring-foreground/10">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-card ring-1 ring-border">
             <User className="size-5 text-muted-foreground" />
           </div>
           <div className="flex min-w-0 flex-col">

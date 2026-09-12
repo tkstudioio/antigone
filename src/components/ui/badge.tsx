@@ -5,14 +5,14 @@ import { Slot } from "radix-ui";
 import { cn } from "@/lib/utils";
 
 const badgeVariants = cva(
-  "group/badge inline-flex rounded-full px-sm transition-colors border-2 border-transparent text-foreground",
+  "group/badge inline-flex rounded-full px-2 transition-colors border-2 border-transparent",
   {
     variants: {
       action: {
-        primary: "bg-primary",
-        muted: "border-muted bg-muted",
-        negative: "bg-negative",
-        positive: "border-positive bg-positive",
+        primary: "bg-primary text-primary-foreground",
+        muted: "border-border bg-muted text-muted-foreground",
+        negative: "bg-negative text-negative-foreground",
+        positive: "border-positive bg-positive text-positive-foreground",
       },
       variant: {
         solid: "border-transparent",
@@ -37,7 +37,7 @@ const badgeVariants = cva(
       {
         variant: "outline",
         action: "muted",
-        className: "border-muted text-muted",
+        className: "border-border text-muted-foreground",
       },
     ],
   }

@@ -18,17 +18,17 @@ import Link from "next/link";
 
 export default async function Homepage() {
   return (
-    <div className="space-y-xl pb-xl">
+    <div className="space-y-16 pb-16">
       {/* Hero */}
-      <section className="flex flex-col items-center gap-lg py-xl text-center">
-        <div className="max-w-large space-y-md">
+      <section className="flex flex-col items-center gap-8 py-16 text-center">
+        <div className="max-w-lg space-y-4">
           <H1 className="text-balance text-5xl">Buy and sell digital products in full privacy</H1>
-          <P className="text-pretty text-lg text-muted">
+          <P className="text-pretty text-lg text-muted-foreground">
             A peer-to-peer marketplace for license keys and digital goods. No email, no password —
             just your key. Every order is protected by Bitcoin escrow.
           </P>
         </div>
-        <div className="flex w-full max-w-medium flex-col gap-md sm:flex-row">
+        <div className="flex w-full max-w-md flex-col gap-4 sm:flex-row">
           <Button size="lg" asChild className="flex-1">
             <Link href="/products">Browse catalog</Link>
           </Button>
@@ -39,13 +39,13 @@ export default async function Homepage() {
       </section>
 
       {/* What it is */}
-      <section className="space-y-lg">
+      <section className="space-y-8">
         <SectionHeading
           eyebrow="What it is"
           title="A marketplace built around your keys"
           subtitle="Antigone connects buyers and sellers of digital products without ever asking for personal data. Your identity is a cryptographic key you control — nothing more."
         />
-        <div className="grid gap-md sm:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-3">
           <Feature
             icon={<Fingerprint />}
             title="Passwordless identity"
@@ -65,13 +65,13 @@ export default async function Homepage() {
       </section>
 
       {/* How it works */}
-      <section className="space-y-lg">
+      <section className="space-y-8">
         <SectionHeading
           eyebrow="How it works"
           title="From key to delivery in three steps"
           subtitle="No onboarding forms, no waiting. Create your key in the browser and start trading right away."
         />
-        <div className="grid gap-md sm:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-3">
           <Step
             step={1}
             icon={<UserPlus />}
@@ -94,13 +94,13 @@ export default async function Homepage() {
       </section>
 
       {/* Funding */}
-      <section className="space-y-lg">
+      <section className="space-y-8">
         <SectionHeading
           eyebrow="Your funds"
           title="Top up or cash out whenever you want"
           subtitle="Your balance is always yours to move. Add or withdraw funds at any time, with no lock-up and no intermediary holding your money."
         />
-        <div className="grid gap-md sm:grid-cols-2">
+        <div className="grid gap-4 sm:grid-cols-2">
           <Feature
             icon={<Zap />}
             title="Lightning swap"
@@ -116,13 +116,13 @@ export default async function Homepage() {
 
       {/* Escrow */}
       <section>
-        <Card className="space-y-lg p-lg">
+        <Card className="space-y-8 p-8">
           <SectionHeading
             eyebrow="Escrow"
             title="Every trade is protected"
             subtitle="Payments are never sent directly to the seller. They are locked in a Bitcoin escrow until the buyer receives the goods — protecting both sides of the trade."
           />
-          <div className="grid gap-md sm:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-3">
             <Feature
               variant="ghost"
               icon={<Lock />}
@@ -142,9 +142,9 @@ export default async function Homepage() {
               description="If something goes wrong, the order chat and platform moderation step in to settle the dispute fairly."
             />
           </div>
-          <div className="flex flex-col gap-md sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <Large>Ready to trade with confidence?</Large>
-            <div className="flex gap-md">
+            <div className="flex gap-4">
               <Button asChild>
                 <Link href="/products">Browse catalog</Link>
               </Button>
@@ -169,12 +169,12 @@ function SectionHeading({
   subtitle: string;
 }) {
   return (
-    <div className="max-w-large space-y-sm">
+    <div className="max-w-lg space-y-2">
       <span className="text-sm font-semibold tracking-widest text-primary uppercase">
         {eyebrow}
       </span>
       <h2 className="text-3xl font-bold text-balance">{title}</h2>
-      <P className="text-pretty text-muted">{subtitle}</P>
+      <P className="text-pretty text-muted-foreground">{subtitle}</P>
     </div>
   );
 }
@@ -192,13 +192,13 @@ function Feature({
 }) {
   return (
     <Card variant={variant} className="h-full">
-      <CardHeader className="gap-md">
-        <span className="flex size-10 items-center justify-center rounded-card bg-primary/20 text-primary [&_svg]:size-5">
+      <CardHeader className="gap-4">
+        <span className="flex size-10 items-center justify-center rounded-md bg-primary/20 text-primary [&_svg]:size-5">
           {icon}
         </span>
         <CardTitle className="text-lg">{title}</CardTitle>
       </CardHeader>
-      <CardContent className="text-muted">{description}</CardContent>
+      <CardContent className="text-muted-foreground">{description}</CardContent>
     </Card>
   );
 }
@@ -216,16 +216,16 @@ function Step({
 }) {
   return (
     <Card className="h-full">
-      <CardHeader className="gap-md">
+      <CardHeader className="gap-4">
         <div className="flex items-center justify-between">
-          <span className="flex size-10 items-center justify-center rounded-card bg-primary/20 text-primary [&_svg]:size-5">
+          <span className="flex size-10 items-center justify-center rounded-md bg-primary/20 text-primary [&_svg]:size-5">
             {icon}
           </span>
           <span className="text-4xl font-bold text-primary/30">{step}</span>
         </div>
         <CardTitle className="text-lg">{title}</CardTitle>
       </CardHeader>
-      <CardContent className="text-muted">{description}</CardContent>
+      <CardContent className="text-muted-foreground">{description}</CardContent>
     </Card>
   );
 }

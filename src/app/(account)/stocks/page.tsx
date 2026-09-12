@@ -96,9 +96,11 @@ export default function StocksPage() {
 
   return (
     <>
-      <div className="flex flex-col gap-md sm:flex-row sm:items-center sm:justify-between">
-        <div className="space-y-xs">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted">Warehouse</p>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="space-y-1">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Warehouse
+          </p>
           <H1>Your stocks</H1>
         </div>
 
@@ -110,16 +112,16 @@ export default function StocksPage() {
         <CreateStockSheet open={sheetOpen} onOpenChange={setSheetOpen} mode="create" />
       </div>
 
-      <div className="grid gap-md lg:grid-cols-[18rem_minmax(0,1fr)]">
+      <div className="grid gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]">
         <Card className="h-fit">
-          <CardHeader className="gap-md">
-            <div className="flex items-center gap-sm text-sm font-semibold">
+          <CardHeader className="gap-4">
+            <div className="flex items-center gap-2 text-sm font-semibold">
               <SlidersHorizontal className="size-4 text-primary" />
               Filters
             </div>
           </CardHeader>
 
-          <CardContent className="space-y-md">
+          <CardContent className="space-y-4">
             <FilterSection label="Name">
               <InputGroup>
                 <InputGroupAddon>
@@ -174,9 +176,11 @@ export default function StocksPage() {
             </FilterSection>
           </CardContent>
 
-          <CardContent className="space-y-sm border-t border-border/50 pt-md">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted">Sort by</p>
-            <div className="grid gap-xs">
+          <CardContent className="space-y-2 border-t border-border/50 pt-4">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Sort by
+            </p>
+            <div className="grid gap-1">
               {stockSortOptions.map((option) => {
                 const Icon = option.icon;
                 const active = query.sort === option.sort && query.dir === option.dir;
@@ -213,7 +217,7 @@ export default function StocksPage() {
           </CardFooter>
         </Card>
 
-        <section className="min-w-0 space-y-md">
+        <section className="min-w-0 space-y-4">
           {match(stocksQuery)
             .with({ isPending: true }, () => <StockCardsSkeleton />)
             .with({ isError: true }, () => (
@@ -246,9 +250,9 @@ export default function StocksPage() {
 
               return (
                 <>
-                  <div className="flex flex-col gap-sm sm:flex-row sm:items-end sm:justify-between">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                     <div>
-                      <p className="text-xs font-medium uppercase tracking-wide text-muted">
+                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                         Active stocks
                       </p>
                       <p className="text-2xl font-semibold">
@@ -262,14 +266,14 @@ export default function StocksPage() {
                     </Badge>
                   </div>
 
-                  <div className="space-y-md">
+                  <div className="space-y-4">
                     {filteredRows.map((row) => (
                       <StockProductCard key={row.productId} stock={row} />
                     ))}
                   </div>
 
                   {totalPages > 1 && (
-                    <div className="flex flex-col gap-sm sm:flex-row sm:items-center sm:justify-end">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
                       <Button
                         variant="outline"
                         size="sm"
@@ -310,11 +314,13 @@ function FilterSection({
   children: ReactNode;
 }) {
   return (
-    <div className="space-y-sm">
-      <div className="flex min-w-0 items-center justify-between gap-sm">
-        <p className="shrink-0 text-xs font-medium uppercase tracking-wide text-muted">{label}</p>
+    <div className="space-y-2">
+      <div className="flex min-w-0 items-center justify-between gap-2">
+        <p className="shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          {label}
+        </p>
         {value ? (
-          <span className="min-w-0 truncate text-right text-xs text-muted">{value}</span>
+          <span className="min-w-0 truncate text-right text-xs text-muted-foreground">{value}</span>
         ) : null}
       </div>
       {children}
@@ -329,14 +335,14 @@ function StockProductCard({ stock }: { stock: StockProduct }) {
   const averageKeysPerTier = Math.max(1, Math.round(stock.availableKeysCount / stock.priceTiers));
 
   return (
-    <Card className="border-border/70 bg-fill/90 transition hover:-translate-y-0.5 hover:ring-1 hover:ring-primary/35">
-      <CardHeader className="gap-md">
-        <div className="flex flex-col gap-md sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex min-w-0 items-start gap-md">
-            <div className="flex size-11 shrink-0 items-center justify-center rounded-card border border-primary/30 bg-primary/10 text-primary">
+    <Card className="border-border/70 bg-card/90 transition hover:-translate-y-0.5 hover:ring-1 hover:ring-primary/35">
+      <CardHeader className="gap-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex min-w-0 items-start gap-4">
+            <div className="flex size-11 shrink-0 items-center justify-center rounded-md border border-primary/30 bg-primary/10 text-primary">
               <Boxes className="size-5" />
             </div>
-            <div className="min-w-0 space-y-sm">
+            <div className="min-w-0 space-y-2">
               <div className="min-w-0">
                 <CardTitle className="truncate text-xl">
                   <Link href={`/stocks/${stock.slug}`} className="hover:text-primary">
@@ -344,8 +350,8 @@ function StockProductCard({ stock }: { stock: StockProduct }) {
                   </Link>
                 </CardTitle>
               </div>
-              <div className="flex flex-wrap gap-xs">
-                <Badge variant="outline" action="muted" className="gap-xs">
+              <div className="flex flex-wrap gap-1">
+                <Badge variant="outline" action="muted" className="gap-1">
                   <Layers className="size-3" />
                   {stock.priceTiers.toLocaleString("en-US")}{" "}
                   {stock.priceTiers === 1 ? "tier" : "tiers"}
@@ -366,7 +372,7 @@ function StockProductCard({ stock }: { stock: StockProduct }) {
         </div>
       </CardHeader>
 
-      <CardContent className="grid gap-sm md:grid-cols-3">
+      <CardContent className="grid gap-2 md:grid-cols-3">
         <StockMetric
           icon={PackageCheck}
           label="Keys"
@@ -387,9 +393,11 @@ function StockProductCard({ stock }: { stock: StockProduct }) {
         />
       </CardContent>
 
-      <CardFooter className="flex-col items-stretch gap-sm sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-sm">
-          <span className="text-xs font-medium uppercase tracking-wide text-muted">Stock</span>
+      <CardFooter className="flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Stock
+          </span>
           <div className="grid w-28 grid-cols-5 gap-1" aria-hidden="true">
             {Array.from({ length: 5 }).map((_, index) => (
               <span
@@ -402,7 +410,7 @@ function StockProductCard({ stock }: { stock: StockProduct }) {
             ))}
           </div>
         </div>
-        <p className="text-xs text-muted">
+        <p className="text-xs text-muted-foreground">
           From {formatPrice(stock.lowestPrice)}
           {hasPriceRange ? ` to ${formatPrice(stock.highestPrice)}` : ""}
         </p>
@@ -423,33 +431,33 @@ function StockMetric({
   detail: string;
 }) {
   return (
-    <div className="min-w-0 rounded-card border border-border/60 bg-background/40 p-md">
-      <div className="mb-sm flex items-center gap-xs text-xs font-medium uppercase tracking-wide text-muted">
+    <div className="min-w-0 rounded-md border border-border/60 bg-background/40 p-4">
+      <div className="mb-2 flex items-center gap-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
         <Icon className="size-3.5" />
         {label}
       </div>
       <p className="truncate text-lg font-semibold">{value}</p>
-      <p className="truncate text-xs text-muted">{detail}</p>
+      <p className="truncate text-xs text-muted-foreground">{detail}</p>
     </div>
   );
 }
 
 function StockCardsSkeleton() {
   return (
-    <div className="space-y-md">
+    <div className="space-y-4">
       {Array.from({ length: 4 }).map((_, index) => (
         <Card key={index}>
           <CardHeader>
-            <div className="flex items-start gap-md">
-              <Skeleton className="size-11 rounded-card" />
-              <div className="flex-1 space-y-sm">
+            <div className="flex items-start gap-4">
+              <Skeleton className="size-11 rounded-md" />
+              <div className="flex-1 space-y-2">
                 <Skeleton className="h-6 w-2/5" />
                 <Skeleton className="h-5 w-1/4" />
               </div>
               <Skeleton className="h-9 w-24" />
             </div>
           </CardHeader>
-          <CardContent className="grid gap-sm md:grid-cols-3">
+          <CardContent className="grid gap-2 md:grid-cols-3">
             <Skeleton className="h-24" />
             <Skeleton className="h-24" />
             <Skeleton className="h-24" />
@@ -463,15 +471,15 @@ function StockCardsSkeleton() {
 function EmptyStocksState({ hasSearch, onCreate }: { hasSearch: boolean; onCreate: () => void }) {
   return (
     <Card>
-      <CardContent className="flex flex-col items-center gap-md py-xl text-center">
-        <div className="flex size-12 items-center justify-center rounded-card border border-primary/30 bg-primary/10 text-primary">
+      <CardContent className="flex flex-col items-center gap-4 py-16 text-center">
+        <div className="flex size-12 items-center justify-center rounded-md border border-primary/30 bg-primary/10 text-primary">
           <PackageCheck className="size-6" />
         </div>
-        <div className="space-y-xs">
+        <div className="space-y-1">
           <p className="text-xl font-semibold">
             {hasSearch ? "No stock found" : "You don't have any stock yet"}
           </p>
-          <p className="text-sm text-muted">
+          <p className="text-sm text-muted-foreground">
             {hasSearch ? "Try a different product name." : "Add your first keys to start selling."}
           </p>
         </div>

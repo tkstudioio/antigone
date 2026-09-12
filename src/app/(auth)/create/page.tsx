@@ -17,7 +17,7 @@ export default function CreatePage() {
   // After creation we show the mnemonic only once for backup.
   if (mutation.isSuccess) {
     return (
-      <div className="w-full space-y-md">
+      <div className="w-full space-y-4">
         <Card>
           <CardHeader>
             <CardTitle>Save your seed phrase</CardTitle>
@@ -25,8 +25,8 @@ export default function CreatePage() {
               Write down these 12 words in a safe place. They will not be shown again.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-md">
-            <div className="rounded-md border bg-muted p-md font-mono text-sm break-words">
+          <CardContent className="space-y-4">
+            <div className="rounded-md border bg-muted p-4 font-mono text-sm break-words">
               {mutation.data.mnemonic}
             </div>
             <Alert action="negative">
@@ -47,7 +47,7 @@ export default function CreatePage() {
   }
 
   return (
-    <div className="w-full space-y-md">
+    <div className="w-full space-y-4">
       <Card>
         <CardHeader>
           <CardTitle>Create a new account</CardTitle>

@@ -76,7 +76,7 @@ export function ReceiveDialog() {
           Receive
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-medium">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Receive Bitcoin</DialogTitle>
           <DialogDescription>Copy an address to receive a payment.</DialogDescription>
@@ -102,9 +102,7 @@ export function ReceiveDialog() {
               badge="on-chain • Bitcoin"
             />
           )}
-          {bip21Uri && (
-            <AddressRow label="Full BIP21 URI" address={bip21Uri} badge="universal" />
-          )}
+          {bip21Uri && <AddressRow label="Full BIP21 URI" address={bip21Uri} badge="universal" />}
           <p className="text-xs text-muted-foreground">
             For Ark payments use the Ark address. For on-chain Bitcoin payments use the boarding
             address.

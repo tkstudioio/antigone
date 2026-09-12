@@ -31,13 +31,13 @@ export function AccountListItem({ account }: { account: StoredAccount }) {
 
   return (
     <>
-      <div className="flex items-center gap-sm">
+      <div className="flex items-center gap-2">
         <Button
           type="button"
           onClick={() => setOpen(true)}
           variant={"ghost"}
           action={"muted"}
-          className="flex-1 justify-start gap-md py-md! px-0!"
+          className="flex-1 justify-start gap-4 py-4! px-0!"
         >
           <Identicon value={account.pubkey} />
           <div className="text-left">

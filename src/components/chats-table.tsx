@@ -98,7 +98,7 @@ export function ChatsTable() {
     <div className="flex flex-col gap-6">
       {/* Toolbar */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <InputGroup className="max-w-small">
+        <InputGroup className="max-w-sm">
           <InputGroupAddon>
             <InputGroupText>
               <SearchIcon className="size-4" />

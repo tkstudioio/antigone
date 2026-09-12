@@ -22,8 +22,8 @@ export default async function ShopLayout({ children }: { children: React.ReactNo
   return (
     <div className="flex min-h-screen flex-col">
       <header className="w-full bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/60 flex">
-        <div className="container mx-auto flex py-lg items-center justify-between">
-          <div className="flex items-center gap-sm">
+        <div className="container mx-auto flex px-4 py-8 items-center justify-between">
+          <div className="flex items-center gap-2">
             <Link href={"/"}>
               <Icon className="h-8" />
             </Link>
@@ -36,7 +36,7 @@ export default async function ShopLayout({ children }: { children: React.ReactNo
               </NavigationMenuList>
             </NavigationMenu>
           </div>
-          <div className="flex items-center gap-sm">
+          <div className="flex items-center gap-2">
             {session ? (
               <>
                 <CartPopover />
@@ -58,7 +58,7 @@ export default async function ShopLayout({ children }: { children: React.ReactNo
         </div>
       </header>
 
-      <main className="flex-1 container mx-auto space-y-xl mt-md ">{children}</main>
+      <main className="flex-1 container mx-auto px-4 space-y-16 mt-4">{children}</main>
     </div>
   );
 }
