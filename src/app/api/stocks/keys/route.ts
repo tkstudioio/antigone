@@ -1,31 +1,19 @@
-import { NextRequest, NextResponse } from "next/server";
-import { requireSessionRoute } from "@/lib/auth/session";
-import { verifySignedJsonBody } from "@/lib/auth/verify-signed-json-body";
+import { signedRoute } from "@/lib/auth/signed-route";
 import { deleteKeysSchema } from "@/validators";
 import { deleteKeysFromStock } from "@/lib/backend/mutations-stocks";
 
-export async function DELETE(req: NextRequest) {
-  const auth = await requireSessionRoute();
-  if (!auth.ok) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+export const DELETE = signedRoute({
+  schema: deleteKeysSchema,
+  signer: "session",
+  handler: async ({ payload, pubkey: sellerPubkey }) => {
+    const { keyIds } = payload;
 
-  const sellerPubkey = auth.session.user.pubkey;
+    const result = await deleteKeysFromStock({ sellerPubkey, keyIds });
 
-  let parsed: Awaited<ReturnType<typeof verifySignedJsonBody<typeof deleteKeysSchema>>>;
-  try {
-    parsed = await verifySignedJsonBody(req, sellerPubkey, deleteKeysSchema);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Invalid signature";
-    const status = message.includes("Invalid signature") ? 400 : 422;
-    return Response.json({ error: message }, { status });
-  }
+    if (result.deleted === 0) {
+      return Response.json({ error: "Some keys are no longer available" }, { status: 409 });
+    }
 
-  const { keyIds } = parsed;
-
-  const result = await deleteKeysFromStock({ sellerPubkey, keyIds });
-
-  if (result.deleted === 0) {
-    return Response.json({ error: "Some keys are no longer available" }, { status: 409 });
-  }
-
-  return Response.json({ deleted: result.deleted, notFound: result.notFound });
-}
+    return Response.json({ deleted: result.deleted, notFound: result.notFound });
+  },
+});

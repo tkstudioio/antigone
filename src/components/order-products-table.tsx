@@ -5,7 +5,7 @@ import Link from "next/link";
 import { toast } from "react-toastify";
 import { CheckIcon, CopyIcon, EyeIcon, EyeOffIcon } from "lucide-react";
 
-import type { OrderDetail, OrderDetailItem } from "@/lib/backend/query-orders";
+import type { OrderDetailItemView, OrderDetailView } from "@/hooks/orders";
 import { formatPrice } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,19 +19,25 @@ import {
 } from "@/components/ui/table";
 
 type Props = {
-  order: OrderDetail;
+  order: OrderDetailView;
 };
 
 /**
- * License-key cell. The server only sends `code` when the viewer is entitled to it (seller always;
- * buyer once delivery is confirmed); the UI never decides entitlement, it just reflects `code`.
- * Null → "—". Otherwise masked by default with a reveal toggle and a copy button.
+ * License-key cell. The server only sends the ciphertext + the viewer's wrapped key when the viewer
+ * is entitled to it (seller always; buyer once delivery is confirmed) and the browser decrypts it;
+ * the UI never decides entitlement, it just reflects the outcome. Nothing to open → "—"; a wrap that
+ * does not open (e.g. a bad delivery by the seller) → "Unable to decrypt — open a dispute".
+ * Otherwise masked by default with a reveal toggle and a copy button.
  */
-function KeyCell({ code }: { code: string | null }) {
+function KeyCell({ item }: { item: OrderDetailItemView }) {
+  const code = item.code;
   const [revealed, setRevealed] = useState(false);
   const [copied, setCopied] = useState(false);
 
   if (code == null) {
+    if (item.codeStatus === "undecryptable") {
+      return <span className="text-xs text-destructive">Unable to decrypt — open a dispute</span>;
+    }
     return <span className="text-muted-foreground">—</span>;
   }
 
@@ -96,7 +102,7 @@ export function OrderProductsTable({ order }: Props) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {order.items.map((item: OrderDetailItem) => (
+            {order.items.map((item: OrderDetailItemView) => (
               <TableRow key={item.keyId}>
                 <TableCell>
                   <Link
@@ -108,7 +114,7 @@ export function OrderProductsTable({ order }: Props) {
                 </TableCell>
                 <TableCell className="text-right">{formatPrice(item.price)}</TableCell>
                 <TableCell className="text-right">
-                  <KeyCell code={item.code} />
+                  <KeyCell item={item} />
                 </TableCell>
               </TableRow>
             ))}

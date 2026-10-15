@@ -1,43 +1,29 @@
-import { NextRequest, NextResponse } from "next/server";
-import { requireSessionRoute } from "@/lib/auth/session";
-import { verifySignedJsonBody } from "@/lib/auth/verify-signed-json-body";
+import { signedRoute } from "@/lib/auth/signed-route";
 import { prepareDisputeSettlement } from "@/lib/backend/mutations-dispute";
 import { settleDisputePrepareSchema } from "@/validators";
 
-export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireSessionRoute();
-  if (!auth.ok) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+// Step 1 of the dispute settlement (favoured party). The server validates and persists the
+// favoured-signed PSBT for the arbiter to co-sign; it signs nothing and never calls the operator.
+export const POST = signedRoute({
+  schema: settleDisputePrepareSchema,
+  signer: "session",
+  handler: async ({ payload, pubkey, params }) => {
+    const orderId = parseInt(params.id, 10);
+    if (isNaN(orderId)) {
+      return Response.json({ error: "Invalid order ID" }, { status: 400 });
+    }
 
-  const { id } = await params;
-  const orderId = parseInt(id, 10);
-  if (isNaN(orderId)) {
-    return Response.json({ error: "Invalid order ID" }, { status: 400 });
-  }
+    const result = await prepareDisputeSettlement({
+      orderId,
+      pubkey,
+      favouredSignedArkPsbt: payload.favouredSignedArkPsbt,
+      checkpointPsbts: payload.checkpointPsbts,
+    });
 
-  const pubkey = auth.session.user.pubkey;
+    if ("error" in result) {
+      return Response.json({ error: result.error }, { status: result.status });
+    }
 
-  let parsed: Awaited<ReturnType<typeof verifySignedJsonBody<typeof settleDisputePrepareSchema>>>;
-  try {
-    parsed = await verifySignedJsonBody(req, pubkey, settleDisputePrepareSchema);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Invalid signature";
-    const status = message.includes("Invalid signature") ? 401 : 422;
-    return Response.json({ error: message }, { status });
-  }
-
-  const result = await prepareDisputeSettlement({
-    orderId,
-    pubkey,
-    favouredSignedArkPsbt: parsed.favouredSignedArkPsbt,
-    checkpointPsbts: parsed.checkpointPsbts,
-  });
-
-  if ("error" in result) {
-    return Response.json({ error: result.error }, { status: result.status });
-  }
-
-  return Response.json({
-    disputeArkTxid: result.disputeArkTxid,
-    adminSignedCheckpoints: result.adminSignedCheckpoints,
-  });
-}
+    return Response.json({ ok: true });
+  },
+});

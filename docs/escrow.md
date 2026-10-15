@@ -31,17 +31,23 @@ overall picture.
 
 - `src/lib/ark/escrow.ts` — `deriveEscrowAddress`, `buildEscrowVtxoScript`.
 - `src/lib/ark/operator.ts` — `getArkOperatorConfig` (operator config, memoized).
-- `src/lib/ark/funding.ts` — `getEscrowFunding`, `getEscrowVtxoSet` (indexer).
+- `src/lib/ark/funding.ts` — `getEscrowFunding`, `getEscrowVtxoSet` (indexer, server side). The browser
+  reads funding itself from the indexer (`useEscrowFunding`, `src/hooks/orders.ts`).
+- `src/lib/ark/operator-signer.ts` — the operator key from `getInfo()` **in the browser**
+  (`getOperatorSignerPubkey`, `assertEscrowOperator`); must equal `escrow.serverPubkey` before any
+  signing or payment. See [crypto/verification.md](./crypto/verification.md).
 - `src/lib/ark/release.ts` — build/sign/submit/finalize of the collaborative release (client-side).
+- `src/lib/ark/dispute.ts` — dispute settlement: favoured party's build/sign, the arbiter's
+  validate-and-co-sign (admin's browser), finalize, and the shared validation gate (isomorphic).
 - `src/lib/ark/tx-validation.ts` — shared PSBT validation gates (the 422 gate).
 - `src/lib/fees.ts` — `computeDisputeBreakdown`, `calculatePlatformFee`.
 - Backend: `mutations-checkout.ts`, `mutations-orders.ts`, `query-orders.ts`.
 
 ## Read these in order
 
-| File                                       | What it covers                                                                                                                                       |
-| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [escrow/contract.md](./escrow/contract.md) | **What the escrow is**: the taproot tree, its 6 spend paths, the per-order unique address, and how the address is derived and verified.              |
-| [escrow/release.md](./escrow/release.md)   | **The happy path**: verifying the buyer paid, the seller confirming, and the 3-step collaborative release; polling and batch-expiry sweep.           |
-| [escrow/dispute.md](./escrow/dispute.md)   | **When it goes wrong**: dispute settlement on Ark (arbiter leaf 1/2, prepare → finalize), the validation gates, and the on-chain CSV exit (Stage 2). |
-| [escrow/fees.md](./escrow/fees.md)         | **The money split**: the platform fee, the admin dispute share, and overfunding.                                                                     |
+| File                                       | What it covers                                                                                                                                                                                |
+| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [escrow/contract.md](./escrow/contract.md) | **What the escrow is**: the taproot tree, its 6 spend paths, the per-order unique address, and how the address is derived and verified.                                                       |
+| [escrow/release.md](./escrow/release.md)   | **The happy path**: verifying the buyer paid, the seller confirming, and the 3-step collaborative release; polling and batch-expiry sweep.                                                    |
+| [escrow/dispute.md](./escrow/dispute.md)   | **When it goes wrong**: dispute settlement on Ark (arbiter leaf 1/2: prepare → arbiter co-sign in the admin's browser → finalize), the validation gates, and the on-chain CSV exit (Stage 2). |
+| [escrow/fees.md](./escrow/fees.md)         | **The money split**: the platform fee, the admin dispute share, and overfunding.                                                                                                              |

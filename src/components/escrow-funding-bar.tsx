@@ -9,10 +9,15 @@ type Props = {
   price: number;
   /** Soonest batch-expiry (epoch ms) of the locked VTXOs, or null/undefined if unknown. */
   expiresAt?: number | null;
-  /** True when batch expiry is near (computed server-side; the bar only renders the warning). */
+  /** True when batch expiry is near (computed in the browser; the bar only renders the warning). */
   expirySoon?: boolean;
   /** True when the locked funds appear to have been swept by the operator after batch expiry. */
   swept?: boolean;
+  /**
+   * True when the Ark indexer cannot be reached: the bar then says so explicitly and shows no
+   * amounts (it never falls back to a figure relayed by our own API).
+   */
+  unavailable?: boolean;
   className?: string;
 };
 
@@ -21,13 +26,35 @@ function formatExpiry(expiresAt: number): string {
 }
 
 /**
- * Progress bar showing how much of the required escrow amount is currently locked on-chain,
- * e.g. "4.000 sats locked of 6.000 sats — 2.000 sats missing". Prices are in satoshi; uses
+ * Progress bar showing how much of the required escrow amount is currently locked on Ark, as read
+ * by the browser from the Ark indexer, e.g. "4,000 sats locked of 6,000 sats — 2,000 sats
+ * missing". Prices are in satoshi; uses
  * `formatPrice` (never €). When the escrow's VTXOs near their batch expiry it warns; if the funds
  * appear swept after expiry it shows an error (the order must be resolved before expiry — there is
  * no escrow renewal, see Arkade "Batch Expiry").
  */
-export function EscrowFundingBar({ total, price, expiresAt, expirySoon, swept, className }: Props) {
+export function EscrowFundingBar({
+  total,
+  price,
+  expiresAt,
+  expirySoon,
+  swept,
+  unavailable,
+  className,
+}: Props) {
+  if (unavailable) {
+    return (
+      <div className={cn("flex flex-col gap-1", className)}>
+        <span className="text-sm text-muted-foreground">
+          {formatPrice(Math.max(0, price))} required
+        </span>
+        <span className="text-xs text-amber-600">
+          Ark indexer unavailable: the locked amount cannot be verified right now.
+        </span>
+      </div>
+    );
+  }
+
   const safePrice = Math.max(0, price);
   const ratio = safePrice > 0 ? Math.min(1, total / safePrice) : total > 0 ? 1 : 0;
   const missing = Math.max(0, safePrice - total);

@@ -1,27 +1,24 @@
 import "server-only";
 
-import { RestArkProvider, SingleKey } from "@arkade-os/sdk";
-import { hex } from "@scure/base";
+import { Transaction } from "@arkade-os/sdk";
+import { base64 } from "@scure/base";
 
 import { db } from "@/db";
-import { getAdminPrivateKey, getAdminPubkey } from "@/lib/backend/admin-key";
-import { ARK_SERVER_URL } from "@/lib/ark";
+import { getAdminPubkey } from "@/lib/backend/admin-key";
 import { calculateAdminDisputeShare, computeDisputeBreakdown } from "@/lib/fees";
-import {
-  buildDisputeSellerLeafScript,
-  buildDisputeBuyerLeafScript,
-  deriveRecipientPkScript,
-} from "@/lib/ark/escrow";
-import { submitDisputeAsAdmin, finalizeDispute } from "@/lib/ark/dispute-server";
 import { getEscrowVtxoSet } from "@/lib/ark/funding";
-import {
-  decodeSettlementTx,
-  assertSpendsOnlyEscrow,
-  assertOutputsMatch,
-  assertValueConserved,
-  type ExpectedOutput,
-} from "@/lib/ark/tx-validation";
+import { validateDisputeSettlementTx } from "@/lib/ark/dispute";
 import type { EscrowParams } from "@/lib/ark/escrow";
+
+/**
+ * Dispute settlement mutations (arbiter-client-side-signing, phase 2 of the untrusted-server
+ * roadmap). The server holds NO key and calls the operator for NOTHING here: every signature and
+ * every `submitTx` / `finalizeTx` happens in a browser (`src/lib/ark/dispute.ts`). These mutations
+ * only validate, persist the relayed PSBTs and advance the escrow status:
+ *
+ *   disputed ──prepare (favoured party)──▶ settlementPrepared ──cosign (arbiter)──▶ settling
+ *   settling ──finalize (favoured party, after `finalizeTx` in its browser)──▶ completed | refunded
+ */
 
 /**
  * Resolve which party drives the on-chain settlement (and signs via their arbiter leaf). The admin
@@ -36,188 +33,87 @@ function resolveFavouredRole(order: {
   return order.conclusionStatus === "completed" ? "seller" : "buyer";
 }
 
-// ─── Output validation ────────────────────────────────────────────────────────
-
-/**
- * Validate the favoured party's signed dispute settlement against the server-computed verdict.
- * Returns an error string (422) if any check fails.
- *
- * Arkade offchain txs come in two layers: the `checkpointPsbts` spend the escrow's real VTXOs, and
- * the `favouredSignedArkPsbt` (the ark tx) spends the checkpoint outputs — so the ark tx's inputs are
- * checkpoint txids (computed locally, not yet on-chain), NOT the escrow VTXOs. Validation therefore
- * checks the two layers separately:
- *
- *   1. INPUTS: every checkpoint input spends a spendable VTXO of THIS escrow (via `allowedOutpoints`).
- *      Security-critical: without it, a favoured party in dispute A could settle by spending a
- *      DIFFERENT escrow's VTXOs (same admin/arbiter, same parties → byte-identical arbiter leaf) with
- *      outputs matching A's verdict, draining the other escrow. The per-order nonce makes each escrow
- *      address unique, so binding the checkpoint inputs to this escrow's outpoints closes that vector.
- *   2. BINDING: every ark tx input spends one of the supplied checkpoints, so the validated outputs
- *      cannot be paired with checkpoints from another escrow.
- *   3. OUTPUTS: the ark tx pays exactly the right set with correct amounts and pkScripts; no extras.
- *   4. Value conservation (sum outputs == verdict total; Arkade offchain fee = 0 per spec).
- *
- * Note: full witness-leaf assertion (which tapleaf is spent) is defense-in-depth and not parsed here;
- * the input binding (#1/#2) + the output gate (#3) + the admin signature (the operator cannot co-sign
- * without it) already make any tampered tx either invalid or harmless.
- */
-function validateDisputeTxOutputs(params: {
-  favouredSignedArkPsbt: string;
-  checkpointPsbts: string[];
-  escrowParams: EscrowParams;
-  favouredRole: "buyer" | "seller";
-  breakdown: { buyerReceives: number; sellerReceives: number; adminReceives: number };
-  allowedOutpoints: Set<string>;
-}): string | null {
-  const {
-    favouredSignedArkPsbt,
-    checkpointPsbts,
-    escrowParams,
-    favouredRole,
-    breakdown,
-    allowedOutpoints,
-  } = params;
-
-  // Ensure the expected spending leaf exists in the tree (build check).
-  // If escrowParams are inconsistent, buildDisputeXLeafScript will throw before we sign.
-  const _leafCheck =
-    favouredRole === "seller"
-      ? buildDisputeSellerLeafScript(escrowParams)
-      : buildDisputeBuyerLeafScript(escrowParams);
-  void _leafCheck;
-
-  const isFavouredSeller = favouredRole === "seller";
-  const serverPubkey = escrowParams.serverPubkey;
-
-  // Build the expected output set (order-independent matching).
-  const expectedOutputs: ExpectedOutput[] = [];
-
-  if (isFavouredSeller) {
-    // Favoured = seller: seller output pkScript is free (their own offchain Ark address).
-    if (breakdown.sellerReceives > 0) {
-      expectedOutputs.push({ amount: BigInt(breakdown.sellerReceives), pkScriptHex: "" });
-    }
-    if (breakdown.buyerReceives > 0) {
-      expectedOutputs.push({
-        amount: BigInt(breakdown.buyerReceives),
-        pkScriptHex: hex.encode(
-          deriveRecipientPkScript(escrowParams.buyerPubkey, serverPubkey, escrowParams.exitDelay)
-        ),
-      });
-    }
-  } else {
-    // Favoured = buyer: buyer output pkScript is free.
-    if (breakdown.buyerReceives > 0) {
-      expectedOutputs.push({ amount: BigInt(breakdown.buyerReceives), pkScriptHex: "" });
-    }
-    if (breakdown.sellerReceives > 0) {
-      expectedOutputs.push({
-        amount: BigInt(breakdown.sellerReceives),
-        pkScriptHex: hex.encode(
-          deriveRecipientPkScript(escrowParams.sellerPubkey, serverPubkey, escrowParams.exitDelay)
-        ),
-      });
-    }
+/** The txid of a (base64) PSBT, or null when it cannot be decoded. */
+function arkTxidOf(psbtBase64: string): string | null {
+  try {
+    return Transaction.fromPSBT(base64.decode(psbtBase64)).id;
+  } catch {
+    return null;
   }
+}
 
-  if (breakdown.adminReceives > 0) {
-    expectedOutputs.push({
-      amount: BigInt(breakdown.adminReceives),
-      pkScriptHex: hex.encode(
-        deriveRecipientPkScript(escrowParams.adminPubkey, serverPubkey, escrowParams.exitDelay)
-      ),
-    });
+function parsePsbtList(value: string | null): string[] | null {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? (parsed as string[]) : null;
+  } catch {
+    return null;
   }
-
-  // Decode the ark tx + checkpoints with the SDK (btc-signer stores txids in display order, matching
-  // the indexer outpoints in `allowedOutpoints`).
-  const decoded = decodeSettlementTx(favouredSignedArkPsbt, checkpointPsbts);
-  if ("error" in decoded) return decoded.error;
-  const { arkTx, checkpointTxs } = decoded;
-
-  // GATE #1 + #2 — every checkpoint input spends ONLY this escrow's VTXOs, and every ark tx input
-  // spends one of those checkpoints. Without #1 a favoured party in dispute A could settle by
-  // spending a DIFFERENT escrow's VTXOs (same parties → byte-identical arbiter leaf); the per-order
-  // nonce makes each escrow address unique, so binding the inputs here closes that vector.
-  const bindingError = assertSpendsOnlyEscrow(arkTx, checkpointTxs, allowedOutpoints);
-  if (bindingError) return bindingError;
-
-  // GATE #3 — the ark tx outputs must match the server-computed verdict (order-independent; the
-  // mandatory P2A anchor is skipped inside the helper).
-  const outputsError = assertOutputsMatch(arkTx, expectedOutputs);
-  if (outputsError) return outputsError;
-
-  // GATE #4 — value conservation: sum(outputs) == verdict total (Arkade offchain fee = 0). The
-  // breakdown already folds any overfunding surplus into the buyer's share, so the total equals the
-  // locked amount being spent.
-  const expectedTotal = BigInt(
-    breakdown.buyerReceives + breakdown.sellerReceives + breakdown.adminReceives
-  );
-  const valueError = assertValueConserved(arkTx, expectedTotal);
-  if (valueError) return valueError;
-
-  return null; // all checks passed
 }
 
 // ─── prepareDisputeSettlement ─────────────────────────────────────────────────
 
+/**
+ * Step 1 (favoured party): validate the favoured-signed ark tx against the verdict (defense in
+ * depth — the arbiter re-validates independently in its browser before co-signing), persist it
+ * together with the checkpoints and move the escrow to `settlementPrepared`. Signs nothing.
+ */
 export async function prepareDisputeSettlement(params: {
   orderId: number;
   pubkey: string;
   favouredSignedArkPsbt: string;
   checkpointPsbts: string[];
-}): Promise<
-  | { ok: true; disputeArkTxid: string; adminSignedCheckpoints: string[] }
-  | { error: string; status: number }
-> {
+}): Promise<{ ok: true } | { error: string; status: number }> {
   const { orderId, pubkey, favouredSignedArkPsbt, checkpointPsbts } = params;
 
-  // --- Guard: admin key ---
-  const adminPrivkey = getAdminPrivateKey();
-  if (!adminPrivkey) return { error: "Admin disabilitato", status: 403 };
-  const adminPubkey = getAdminPubkey()!;
+  // --- Guard: admin identity (public key only) ---
+  const adminPubkey = getAdminPubkey();
+  if (!adminPubkey) return { error: "Admin disabled", status: 403 };
 
   // --- Load order ---
   const orderRow = await db.order.findFirst({
     where: { id: orderId, OR: [{ buyerPubkey: pubkey }, { sellerPubkey: pubkey }] },
-    include: { chat: { select: { id: true } } },
   });
-  if (!orderRow) return { error: "Ordine non trovato", status: 404 };
+  if (!orderRow) return { error: "Order not found", status: 404 };
   if (orderRow.status !== "concluded")
-    return { error: "La disputa non è ancora stata conclusa dall'admin", status: 409 };
-  if (!orderRow.conclusionStatus) return { error: "Esito disputa mancante", status: 409 };
+    return { error: "The dispute has not been concluded by the admin yet", status: 409 };
+  if (!orderRow.conclusionStatus) return { error: "Dispute outcome missing", status: 409 };
 
   // --- Determine favoured party (admin's explicit choice, with legacy fallback) ---
   const favouredRole = resolveFavouredRole(orderRow);
   const favouredPubkey = favouredRole === "seller" ? orderRow.sellerPubkey : orderRow.buyerPubkey;
   if (pubkey !== favouredPubkey) {
-    return { error: "Solo la parte favorita può liquidare", status: 403 };
+    return { error: "Only the favoured party can settle", status: 403 };
   }
 
   // --- Load escrow ---
-  if (!orderRow.escrowAddress) return { error: "Escrow mancante", status: 409 };
+  if (!orderRow.escrowAddress) return { error: "Escrow missing", status: 409 };
   const escrow = await db.escrow.findUnique({ where: { address: orderRow.escrowAddress } });
-  if (!escrow) return { error: "Escrow non trovato", status: 404 };
+  if (!escrow) return { error: "Escrow not found", status: 404 };
 
-  // Idempotency: already settling — return existing txid.
-  if (escrow.status === "settling" && escrow.disputeArkTxid) {
-    const adminSignedCheckpoints = escrow.disputeAdminSignedCheckpoints
-      ? (JSON.parse(escrow.disputeAdminSignedCheckpoints) as string[])
-      : [];
-    return { ok: true, disputeArkTxid: escrow.disputeArkTxid, adminSignedCheckpoints };
+  // Idempotency: the arbiter already co-signed (the favoured party retried) — nothing to do.
+  if (escrow.status === "settling") return { ok: true };
+
+  if (escrow.status !== "disputed" && escrow.status !== "settlementPrepared") {
+    return { error: "The escrow is not in 'disputed' status", status: 409 };
   }
 
-  if (escrow.status !== "disputed") {
-    return { error: "L'escrow non è in stato 'disputed'", status: 409 };
+  // Idempotency: the very same PSBT is already stored.
+  if (
+    escrow.status === "settlementPrepared" &&
+    escrow.disputeFavouredSignedArkPsbt === favouredSignedArkPsbt
+  ) {
+    return { ok: true };
   }
 
   // --- Validate admin pubkey matches escrow arbiter ---
   if (escrow.arbiterPubkey && escrow.arbiterPubkey !== adminPubkey) {
-    return { error: "La chiave admin non corrisponde all'arbitro dell'escrow", status: 409 };
+    return { error: "The admin key does not match the escrow arbiter", status: 409 };
   }
 
   // --- Reconstruct escrow params ---
-  if (!escrow.arbiterPubkey) return { error: "Arbitro mancante sull'escrow", status: 409 };
+  if (!escrow.arbiterPubkey) return { error: "Arbiter missing on the escrow", status: 409 };
   const escrowParams: EscrowParams = {
     buyerPubkey: escrow.buyerPubkey,
     sellerPubkey: escrow.sellerPubkey,
@@ -243,7 +139,7 @@ export async function prepareDisputeSettlement(params: {
     escrow.address
   );
   if (allowedOutpoints.size === 0) {
-    return { error: "Nessun fondo bloccato nell'escrow", status: 409 };
+    return { error: "No funds locked in the escrow", status: 409 };
   }
 
   const breakdown = computeDisputeBreakdown({
@@ -254,11 +150,11 @@ export async function prepareDisputeSettlement(params: {
     lockedTotal,
   });
   if (!breakdown) {
-    return { error: "Breakdown non valido: impossibile calcolare la ripartizione", status: 422 };
+    return { error: "Invalid breakdown: cannot compute the split", status: 422 };
   }
 
-  // --- Validate the PSBT inputs+outputs against the server-computed verdict (GATE) ---
-  const validationError = validateDisputeTxOutputs({
+  // --- Validate the PSBT inputs+outputs against the server-computed verdict (GATE 422) ---
+  const validationError = validateDisputeSettlementTx({
     favouredSignedArkPsbt,
     checkpointPsbts,
     escrowParams,
@@ -267,98 +163,160 @@ export async function prepareDisputeSettlement(params: {
     allowedOutpoints,
   });
   if (validationError) {
-    return { error: `Transazione non valida: ${validationError}`, status: 422 };
+    return { error: `Invalid transaction: ${validationError}`, status: 422 };
   }
 
-  // --- Admin co-signs and submits to operator ---
-  const adminIdentity = SingleKey.fromHex(adminPrivkey);
-  const arkProvider = new RestArkProvider(ARK_SERVER_URL);
-
-  let submitResult: Awaited<ReturnType<typeof submitDisputeAsAdmin>>;
-  try {
-    submitResult = await submitDisputeAsAdmin({
-      favouredSignedArkPsbt,
-      checkpointPsbts,
-      adminIdentity,
-      arkProvider,
-    });
-  } catch (err) {
-    return {
-      error: `Errore durante il submit all'operatore: ${err instanceof Error ? err.message : String(err)}`,
-      status: 502,
-    };
-  }
-
-  const { disputeArkTxid, serverSignedCheckpoints, adminSignedCheckpoints } = submitResult;
-
-  // --- Persist in DB ---
-  await db.escrow.update({
-    where: { address: escrow.address },
+  // --- Persist (no signing, no operator call). Guarded on the status so a concurrent
+  // re-conclusion / co-signature cannot be overwritten; any previous co-sign data is cleared. ---
+  const updated = await db.escrow.updateMany({
+    where: { address: escrow.address, status: { in: ["disputed", "settlementPrepared"] } },
     data: {
       disputeFavouredSignedArkPsbt: favouredSignedArkPsbt,
       disputeCheckpointPsbts: JSON.stringify(checkpointPsbts),
+      disputeServerSignedCheckpoints: null,
+      disputeAdminSignedCheckpoints: null,
+      disputeArkTxid: null,
+      status: "settlementPrepared",
+    },
+  });
+  if (updated.count === 0) {
+    return { error: "The escrow changed in the meantime, please retry", status: 409 };
+  }
+
+  return { ok: true };
+}
+
+// ─── cosignDisputeSettlementAsAdmin ───────────────────────────────────────────
+
+/**
+ * Step 2 (arbiter): record the arbiter's client-side co-signature. The admin's browser already
+ * validated the stored PSBT, signed, called `submitTx` on the operator and signed the returned
+ * checkpoints; here the server only checks that the reported txid is the one of the PSBT it
+ * stored (so the co-signature is bound to the transaction the favoured party prepared), persists
+ * the checkpoints and moves the escrow to `settling`. The caller is already known to be the admin
+ * (`signedRoute` with the `admin` signer).
+ */
+export async function cosignDisputeSettlementAsAdmin(params: {
+  orderId: number;
+  adminPubkey: string;
+  disputeArkTxid: string;
+  serverSignedCheckpoints: string[];
+  adminSignedCheckpoints: string[];
+}): Promise<{ ok: true } | { error: string; status: number }> {
+  const { orderId, adminPubkey, disputeArkTxid, serverSignedCheckpoints, adminSignedCheckpoints } =
+    params;
+
+  const orderRow = await db.order.findUnique({ where: { id: orderId } });
+  if (!orderRow) return { error: "Order not found", status: 404 };
+  if (orderRow.status !== "concluded")
+    return { error: "The dispute has not been concluded yet", status: 409 };
+  if (!orderRow.escrowAddress) return { error: "Escrow missing", status: 409 };
+
+  const escrow = await db.escrow.findUnique({ where: { address: orderRow.escrowAddress } });
+  if (!escrow) return { error: "Escrow not found", status: 404 };
+
+  // Only the escrow's own arbiter may co-sign.
+  if (escrow.arbiterPubkey !== adminPubkey) {
+    return { error: "You are not the arbiter of this escrow", status: 403 };
+  }
+
+  if (escrow.status !== "settlementPrepared") {
+    return { error: "The settlement is not awaiting the arbiter's co-signature", status: 409 };
+  }
+  const storedPsbt = escrow.disputeFavouredSignedArkPsbt;
+  const storedCheckpoints = parsePsbtList(escrow.disputeCheckpointPsbts);
+  if (!storedPsbt || !storedCheckpoints) {
+    return { error: "The prepared settlement is missing", status: 409 };
+  }
+
+  // The co-signature must be bound to the transaction the favoured party prepared.
+  const storedTxid = arkTxidOf(storedPsbt);
+  if (!storedTxid || storedTxid.toLowerCase() !== disputeArkTxid.toLowerCase()) {
+    return {
+      error: "The ark txid does not match the prepared settlement transaction",
+      status: 422,
+    };
+  }
+  if (
+    serverSignedCheckpoints.length !== storedCheckpoints.length ||
+    adminSignedCheckpoints.length !== storedCheckpoints.length
+  ) {
+    return {
+      error: "The number of checkpoints does not match the prepared settlement",
+      status: 422,
+    };
+  }
+
+  // Guarded on status + the PSBT we validated, so a concurrent re-conclusion or re-prepare wins.
+  const updated = await db.escrow.updateMany({
+    where: {
+      address: escrow.address,
+      status: "settlementPrepared",
+      disputeFavouredSignedArkPsbt: storedPsbt,
+    },
+    data: {
+      disputeArkTxid,
       disputeServerSignedCheckpoints: JSON.stringify(serverSignedCheckpoints),
       disputeAdminSignedCheckpoints: JSON.stringify(adminSignedCheckpoints),
-      disputeArkTxid,
       status: "settling",
     },
   });
+  if (updated.count === 0) {
+    return { error: "The escrow changed in the meantime, please retry", status: 409 };
+  }
 
-  return { ok: true, disputeArkTxid, adminSignedCheckpoints };
+  return { ok: true };
 }
 
 // ─── finalizeDisputeSettlement ────────────────────────────────────────────────
 
+/**
+ * Step 3 (favoured party): record the terminal state. The favoured party's browser already signed
+ * the arbiter-signed checkpoints and called `finalizeTx` on the operator; this mutation only
+ * advances the escrow to `completed` (seller favoured) / `refunded` (refund or partial refund),
+ * stamps `settledAt`, posts the system message and closes the dispute chat.
+ */
 export async function finalizeDisputeSettlement(params: {
   orderId: number;
   pubkey: string;
-  fullySignedCheckpoints: string[];
+  disputeArkTxid?: string;
 }): Promise<{ ok: true } | { error: string; status: number }> {
-  const { orderId, pubkey, fullySignedCheckpoints } = params;
+  const { orderId, pubkey, disputeArkTxid } = params;
 
   // --- Load order ---
   const orderRow = await db.order.findFirst({
     where: { id: orderId, OR: [{ buyerPubkey: pubkey }, { sellerPubkey: pubkey }] },
   });
-  if (!orderRow) return { error: "Ordine non trovato", status: 404 };
+  if (!orderRow) return { error: "Order not found", status: 404 };
   if (orderRow.status !== "concluded")
-    return { error: "La disputa non è ancora stata conclusa dall'admin", status: 409 };
-  if (!orderRow.conclusionStatus) return { error: "Esito disputa mancante", status: 409 };
+    return { error: "The dispute has not been concluded by the admin yet", status: 409 };
+  if (!orderRow.conclusionStatus) return { error: "Dispute outcome missing", status: 409 };
 
   // --- Favoured party check ---
   const favouredPubkey =
     resolveFavouredRole(orderRow) === "seller" ? orderRow.sellerPubkey : orderRow.buyerPubkey;
   if (pubkey !== favouredPubkey) {
-    return { error: "Solo la parte favorita può finalizzare", status: 403 };
+    return { error: "Only the favoured party can finalize", status: 403 };
   }
 
   // --- Load escrow ---
-  if (!orderRow.escrowAddress) return { error: "Escrow mancante", status: 409 };
+  if (!orderRow.escrowAddress) return { error: "Escrow missing", status: 409 };
   const escrow = await db.escrow.findUnique({ where: { address: orderRow.escrowAddress } });
-  if (!escrow) return { error: "Escrow non trovato", status: 404 };
+  if (!escrow) return { error: "Escrow not found", status: 404 };
 
   // Idempotency: already terminal.
   if (escrow.status === "completed" || escrow.status === "refunded") {
     return { ok: true };
   }
 
-  if (escrow.status !== "settling" || !escrow.disputeArkTxid) {
-    return { error: "Il settlement non è ancora stato preparato", status: 409 };
+  if (escrow.status === "settlementPrepared") {
+    return { error: "Settlement not co-signed by the arbiter yet", status: 409 };
   }
-
-  // --- finalizeTx with operator ---
-  const arkProvider = new RestArkProvider(ARK_SERVER_URL);
-  try {
-    await finalizeDispute({
-      disputeArkTxid: escrow.disputeArkTxid,
-      fullySignedCheckpoints,
-      arkProvider,
-    });
-  } catch (err) {
-    return {
-      error: `Errore durante la finalizzazione: ${err instanceof Error ? err.message : String(err)}`,
-      status: 502,
-    };
+  if (escrow.status !== "settling" || !escrow.disputeArkTxid) {
+    return { error: "The settlement has not been prepared yet", status: 409 };
+  }
+  if (disputeArkTxid && disputeArkTxid.toLowerCase() !== escrow.disputeArkTxid.toLowerCase()) {
+    return { error: "The ark txid does not match the co-signed settlement", status: 422 };
   }
 
   // --- Advance escrow status ---
@@ -370,7 +328,7 @@ export async function finalizeDisputeSettlement(params: {
       data: { status: terminalStatus, settledAt: new Date() },
     });
 
-    // The escrow is now settled on-chain (terminal): this is where the dispute chat is finally
+    // The escrow is now settled on Ark (terminal): this is where the dispute chat is finally
     // closed (it was kept open through the conclusion/re-conclusion window so parties and admin
     // could communicate). Post the completion notice and close it.
     if (orderRow.escrowAddress) {
@@ -379,7 +337,7 @@ export async function finalizeDisputeSettlement(params: {
         await dbTx.message.create({
           data: {
             chatId: chat.id,
-            message: "Liquidazione on-chain completata.",
+            message: "Ark settlement completed.",
             isSystem: true,
           },
         });
@@ -402,5 +360,5 @@ export async function startDisputeExit(
 ): Promise<{ error: string; status: number }> {
   void orderId;
   void pubkey;
-  return { error: "Exit unilaterale non ancora disponibile", status: 501 };
+  return { error: "Unilateral exit not available yet", status: 501 };
 }

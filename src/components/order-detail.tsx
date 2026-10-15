@@ -1,13 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { match } from "ts-pattern";
 import { ArrowLeft } from "lucide-react";
 
 import { useOrderDetail, useEscrowFunding, useVerifyFunding } from "@/hooks/orders";
 import useProfileStore from "@/stores/profile";
 import type { EscrowStatus } from "@/lib/escrow-status";
+import { ArbiterChangeDialog } from "@/components/arbiter-change-dialog";
+import { OrderVerificationBanner } from "@/components/order-verification-banner";
 import { OrderStepper } from "@/components/order-stepper";
 import { OrderSummaryCard } from "@/components/order-summary-card";
 import { OrderProductsTable } from "@/components/order-products-table";
@@ -31,29 +33,33 @@ type Props = {
 export function OrderDetail({ orderId }: Props) {
   const detailQuery = useOrderDetail(orderId);
   const escrowStatusLive = detailQuery.data?.escrow?.status;
-  const funding = useEscrowFunding(orderId, {
+  // Funding facts come from the Ark indexer, read by this browser (not from our API).
+  const funding = useEscrowFunding(detailQuery.data?.escrow, {
     enabled: Boolean(detailQuery.data?.escrowAddress),
-    escrowStatus: escrowStatusLive,
   });
   const verifyFunding = useVerifyFunding();
   const walletPrivateKey = useProfileStore((s) => s.account?.privateKey);
+  const [arbiterDialogDismissed, setArbiterDialogDismissed] = useState(false);
 
-  // Auto-advance the escrow to `fundLocked` as soon as the live funding poll reports it is funded,
+  // Auto-advance the escrow to `fundLocked` as soon as the indexer poll reports it is funded,
   // so the buyer doesn't have to press "Verify payment" manually.
   // Guard: only run when the wallet is unlocked (privateKey in memory) — if locked/rehydrating,
-  // skip silently; the manual "Verify payment" button is the fallback.
+  // skip silently; the manual "Verify payment" button is the fallback. Also skipped while the
+  // order is blocked by a failed verification (it would sign a request for a suspect order).
   const fundingFunded = funding.data?.funded ?? false;
+  const orderBlocked = Boolean(detailQuery.data?.verification.blocked);
   useEffect(() => {
     if (
       fundingFunded &&
       (escrowStatusLive === "awaitingFunds" || escrowStatusLive === "partiallyFunded") &&
       !verifyFunding.isPending &&
+      !orderBlocked &&
       Boolean(walletPrivateKey)
     ) {
       verifyFunding.mutateAsync(orderId).catch(() => {});
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fundingFunded, escrowStatusLive, orderId, walletPrivateKey]);
+  }, [fundingFunded, escrowStatusLive, orderId, walletPrivateKey, orderBlocked]);
 
   return match(detailQuery)
     .with({ isPending: true }, () => (
@@ -71,6 +77,7 @@ export function OrderDetail({ orderId }: Props) {
 
       const backHref = order.role === "buyer" ? "/orders/buying" : "/orders/selling";
       const escrowStatus = order.escrow?.status as EscrowStatus | undefined;
+      const arbiterCheck = order.verification.arbiter;
 
       return (
         <div className="flex flex-col gap-6">
@@ -82,11 +89,29 @@ export function OrderDetail({ orderId }: Props) {
             </Link>
           </Button>
 
+          {/* Trust notice: failed verification, arbiter change, operator unreachable */}
+          <OrderVerificationBanner
+            verification={order.verification}
+            onReviewArbiter={() => setArbiterDialogDismissed(false)}
+          />
+          {arbiterCheck?.status === "mismatch" && (
+            <ArbiterChangeDialog
+              open={!arbiterDialogDismissed}
+              onOpenChange={(open) => setArbiterDialogDismissed(!open)}
+              pinned={arbiterCheck.pinned}
+              seen={arbiterCheck.seen}
+            />
+          )}
+
           {/* Body: actions + stepper (narrow, sticky left) · content (wide right) */}
           <div className="grid gap-6 lg:grid-cols-[minmax(280px,1fr)_4fr]">
             {/* Left: actions on top, vertical stepper below — sticky, first on mobile */}
             <div className="flex flex-col gap-6 lg:sticky lg:top-20 lg:self-start">
-              <OrderActionsPanel order={order} funding={funding.data} />
+              <OrderActionsPanel
+                order={order}
+                funding={funding.data}
+                fundingUnavailable={funding.unavailable}
+              />
               <OrderStepper
                 orderStatus={order.status}
                 escrowStatus={escrowStatus}

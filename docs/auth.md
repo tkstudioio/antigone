@@ -20,13 +20,13 @@ in the browser from a BIP39 mnemonic + passphrase and **never leaves the client*
 
 ## Client → API path
 
-| Action        | Page / Component                                                      | Hook                                        | API                                            |
-| ------------- | --------------------------------------------------------------------- | ------------------------------------------- | ---------------------------------------------- |
-| Create account| `create/page.tsx`                                                     | `accounts.ts` (`useCreateAccountMutation`)  | `POST /api/auth/register`                      |
-| Restore       | `restore/page.tsx` → `restore-account-form.tsx`                       | `accounts.ts` (`useRestoreAccountMutation`) | `POST /api/auth/register`                      |
-| Login         | `login/page.tsx` → `accounts-list-item.tsx` → `passphrase-dialog.tsx` | `accounts.ts` (`useLoginMutation`)          | `POST /api/auth/challenge` + NextAuth `signIn` |
-| Unlock        | `wallet-auto-reconnect.tsx` → `unlock-dialog.tsx`                     | `wallet.ts` (`useWalletAutoReconnect`)      | — (rehydration / decrypt vault)                |
-| Account list  | `login/page.tsx`                                                      | `accounts.ts` (`useAccountsList`)           | — (only `localStorage`)                        |
+| Action         | Page / Component                                                      | Hook                                        | API                                            |
+| -------------- | --------------------------------------------------------------------- | ------------------------------------------- | ---------------------------------------------- |
+| Create account | `create/page.tsx`                                                     | `accounts.ts` (`useCreateAccountMutation`)  | `POST /api/auth/register`                      |
+| Restore        | `restore/page.tsx` → `restore-account-form.tsx`                       | `accounts.ts` (`useRestoreAccountMutation`) | `POST /api/auth/register`                      |
+| Login          | `login/page.tsx` → `accounts-list-item.tsx` → `passphrase-dialog.tsx` | `accounts.ts` (`useLoginMutation`)          | `POST /api/auth/challenge` + NextAuth `signIn` |
+| Unlock         | `wallet-auto-reconnect.tsx` → `unlock-dialog.tsx`                     | `wallet.ts` (`useWalletAutoReconnect`)      | — (rehydration / decrypt vault)                |
+| Account list   | `login/page.tsx`                                                      | `accounts.ts` (`useAccountsList`)           | — (only `localStorage`)                        |
 
 ## Sub-flows (L3)
 
@@ -48,11 +48,21 @@ sign-out.
 
 ## Admin identity
 
-`ADMIN_MNEMONIC` + `ADMIN_PASSPHRASE` (server-only env) → admin pubkey derived via
-`mnemonicToPrivateKey(ADMIN_MNEMONIC, ADMIN_PASSPHRASE)` + `derivePubkey`. **`ADMIN_PASSPHRASE` must
-match the passphrase the admin uses in the UI** (it is their 13th word): otherwise the derived pubkey
-does not match the one used at login and no one obtains `isAdmin`. The same identity is used at
-every server point that derives the admin key (the `isAdmin` check in `auth-options.ts`, the escrow
-arbiter pubkey at checkout, dispute co-signing in `mutations-dispute.ts`). If
-`ADMIN_MNEMONIC` is omitted or invalid → `console.error` and admin disabled (no one obtains
-`isAdmin`). See also [admin.md](./admin.md).
+`ADMIN_PUBKEY` (server-only env, **public** value) → the platform admin's 33-byte compressed secp256k1
+pubkey, hex. `getAdminPubkey()` (`src/lib/backend/admin-key.ts`) reads and validates it (hex, 33 bytes,
+valid curve point), memoized; a missing or invalid value → `console.error` and **admin disabled** (no
+one obtains `isAdmin`, and checkout fails with a "missing escrow configuration" error).
+
+The **server never holds the admin's mnemonic, passphrase or private key**. The admin logs into the UI
+like any user, with the identity (mnemonic + passphrase, their 13th word) whose pubkey is
+`ADMIN_PUBKEY`; `isAdmin` (`auth-options.ts`) is simply "session pubkey equals `ADMIN_PUBKEY`". The
+same public key is used at every server point that needs the admin: the `isAdmin` check, the escrow
+arbiter pubkey at checkout, the dispute chat re-encryption recipient (`grant-admin`), and the
+arbiter-pubkey match in the dispute settlement mutations. The arbiter's **signature** is produced only
+in the admin's browser (see [escrow/dispute.md](./escrow/dispute.md)).
+
+**Deriving `ADMIN_PUBKEY`.** Instance operators derive it locally, without putting the mnemonic on the
+server: `DERIVE_MNEMONIC="…" DERIVE_PASSPHRASE="…" yarn derive:pubkey` (`src/scripts/derive-pubkey.ts`)
+prints the compressed pubkey using the same derivation as the client (`mnemonicToPrivateKey` +
+`derivePubkey`). The secrets are read only from the environment of that invocation (never from `.env`)
+and are never stored. See also [admin.md](./admin.md).

@@ -2,13 +2,25 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { backend } from "@/lib/backend/index";
-import { postSigned } from "@/lib/auth/signed-request";
+import { postSigned, uploadSigned } from "@/lib/auth/signed-request";
 import useProfileStore from "@/stores/profile";
 import { buildEnvelope } from "@/lib/crypto/message-envelope";
-import { decryptChatMessages } from "@/hooks/chat";
+import { validateAndCosignDisputeAsArbiter } from "@/lib/ark/dispute";
+import { derivePubkey } from "@/lib/utils";
+import {
+  assertOrderActionable,
+  disputeVerdictFrom,
+  escrowParamsFrom,
+  favouredRoleFrom,
+  loadOrderView,
+  requireWalletContext,
+  type OrderDetailView,
+} from "@/hooks/orders";
+import { assertEscrowOperator } from "@/lib/ark/operator-signer";
+import { sendOnChain, verifyAndDecryptChat } from "@/hooks/chat";
 import type { AdminChatsResponse } from "@/lib/backend/query-chats";
 import type { ChatDetail } from "@/lib/backend/query-chat-types";
-import type { AttachmentMeta } from "@/hooks/chat";
+import type { AttachmentMeta, ChatParties, VerifiedChatDetail } from "@/hooks/chat";
 import type { DisputesResponse, OrderDetail } from "@/lib/backend/query-orders";
 import { toast } from "react-toastify";
 
@@ -30,14 +42,37 @@ export function useAdminChats(query: AdminChatsQuery) {
   });
 }
 
-export function useAdminChat(chatId: number | null) {
+/**
+ * The admin's view of a chat, verified and decrypted. The arbiter (the admin itself) is the signer's
+ * own key. `buyerSeller` should come from the VERIFIED order (the dispute detail); without it the
+ * server's buyer/seller are used.
+ */
+export function useAdminChat(
+  chatId: number | null,
+  buyerSeller?: Pick<ChatParties, "buyerPubkey" | "sellerPubkey">
+) {
   const privateKey = useProfileStore((s) => s.account?.privateKey);
+  const ownPubkey = useProfileStore((s) => s.account?.pubkey);
   return useQuery({
-    queryKey: ["admin-chat", chatId, privateKey],
-    queryFn: async (): Promise<ChatDetail> => {
+    queryKey: [
+      "admin-chat",
+      chatId,
+      privateKey,
+      buyerSeller?.buyerPubkey ?? null,
+      buyerSeller?.sellerPubkey ?? null,
+    ],
+    queryFn: async (): Promise<VerifiedChatDetail> => {
       const { data } = await backend.get<ChatDetail>(`/admin/chat/${chatId}`);
-      const messages = await decryptChatMessages(data.messages, privateKey);
-      return { ...data, messages };
+      return verifyAndDecryptChat({
+        chat: data,
+        parties: {
+          buyerPubkey: buyerSeller?.buyerPubkey ?? data.buyerPubkey,
+          sellerPubkey: buyerSeller?.sellerPubkey ?? data.sellerPubkey,
+          arbiterPubkey: ownPubkey ?? null,
+        },
+        viewerPubkey: ownPubkey,
+        privateKey,
+      });
     },
     enabled: chatId != null,
     // Poll for new messages while the chat is open; stop once it is closed.
@@ -46,15 +81,17 @@ export function useAdminChat(chatId: number | null) {
 }
 
 export function useUploadAdminChatAttachment(chatId: number | null) {
+  const privateKey = useProfileStore((s) => s.account?.privateKey);
   return useMutation({
     mutationFn: async (file: File): Promise<AttachmentMeta> => {
       if (chatId == null) throw new Error("chatId unavailable");
-      const formData = new FormData();
-      formData.append("file", file);
-      const response = await backend.post<AttachmentMeta>(`/chat/${chatId}/attachment`, formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-      return response.data;
+      if (!privateKey) throw new Error("Wallet unavailable");
+      // Signed raw-bytes upload: the file is the body, its name travels in the (signed) query string.
+      return uploadSigned<AttachmentMeta>(
+        `/chat/${chatId}/attachment?name=${encodeURIComponent(file.name)}`,
+        file,
+        privateKey
+      );
     },
   });
 }
@@ -87,7 +124,11 @@ export function useAdminSendMessage(
       }
       if (payload.attachment != null) body.attachment = payload.attachment;
 
-      return postSigned(`/chat/${chatId}/admin-message`, body, account.privateKey);
+      return sendOnChain({
+        fetchChat: () => backend.get<ChatDetail>(`/admin/chat/${chatId}`).then((r) => r.data),
+        send: (prevHash) =>
+          postSigned(`/chat/${chatId}/admin-message`, { ...body, prevHash }, account.privateKey),
+      });
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["admin-chat", chatId] });
@@ -112,11 +153,33 @@ export function useAdminDisputes(query: AdminDisputesQuery) {
   });
 }
 
+/** Escrow states in which the settlement is still moving (a party or the arbiter has a pending move). */
+const ADMIN_WATCHED_ESCROW_STATUSES = ["disputed", "settlementPrepared", "settling"];
+
+/**
+ * Dispute detail for the admin. The license codes arrive as ciphertext + the arbiter-wrapped key
+ * (present only once a party shared it); they are decrypted here with the admin's in-memory key. The
+ * order's signed actions (buyer's checkout terms, delivery, dispute opening and the admin's own
+ * verdict) are verified in the browser; the arbiter of the escrow must be the admin's own key.
+ */
 export function useAdminDisputeDetail(orderId: number | null) {
+  const privateKey = useProfileStore((s) => s.account?.privateKey);
+  const pubkey = useProfileStore((s) => s.account?.pubkey);
   return useQuery({
-    queryKey: ["admin-dispute", orderId],
-    queryFn: () => backend.get<OrderDetail>(`/admin/disputes/${orderId}`).then((r) => r.data),
+    queryKey: ["admin-dispute", orderId, pubkey, Boolean(privateKey)],
+    queryFn: async (): Promise<OrderDetailView> => {
+      const { data } = await backend.get<OrderDetail>(`/admin/disputes/${orderId}`);
+      return loadOrderView({
+        order: data,
+        privateKey,
+        viewer: { pubkey: pubkey ?? null, kind: "arbiter" },
+      });
+    },
     enabled: orderId != null,
+    // Poll while the settlement is in flight so the admin sees the favoured party's prepare (and
+    // the final status) without reloading; stop once the escrow is terminal.
+    refetchInterval: (q) =>
+      ADMIN_WATCHED_ESCROW_STATUSES.includes(q.state.data?.escrow?.status ?? "") ? 10000 : false,
   });
 }
 
@@ -147,6 +210,63 @@ export function useAdminConcludeDispute(orderId: number, chatId?: number | null)
         void queryClient.invalidateQueries({ queryKey: ["chat", chatId] });
       }
       toast.success("Dispute concluded.");
+    },
+    onError: (err: unknown) => {
+      const msg = err instanceof Error ? err.message : "An error occurred during the operation";
+      toast.error(msg);
+    },
+  });
+}
+
+/**
+ * Dispute settlement step 2 — the arbiter co-signs in its own browser. The stored favoured-signed
+ * PSBT is validated independently (escrow re-derivation, own-pubkey check, VTXOs read from the Ark
+ * indexer, breakdown recomputed from the verdict, shared gates), then signed, submitted to the
+ * operator and the returned checkpoints signed — all client-side. Only the resulting txid and
+ * checkpoints are posted. Any validation failure aborts before anything is signed or sent.
+ */
+export function useCosignDisputeSettlement(orderId: number) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (order: OrderDetailView) => {
+      const escrow = order.escrow;
+      if (!escrow?.disputeFavouredSignedArkPsbt || !escrow.disputeCheckpointPsbts) {
+        throw new Error("The favoured party has not prepared the settlement yet");
+      }
+      // The verdict and terms the co-signature is validated against must have verified, and the
+      // operator key in the escrow must be the operator's own.
+      assertOrderActionable(order);
+      await assertEscrowOperator(escrow);
+      const ctx = requireWalletContext();
+
+      const cosigned = await validateAndCosignDisputeAsArbiter({
+        favouredSignedArkPsbt: escrow.disputeFavouredSignedArkPsbt,
+        checkpointPsbts: escrow.disputeCheckpointPsbts,
+        escrowParams: escrowParamsFrom(escrow),
+        escrowAddress: escrow.address,
+        favouredRole: favouredRoleFrom(order),
+        verdict: disputeVerdictFrom(order),
+        ownPubkey: derivePubkey(ctx.privateKey),
+        identity: ctx.identity,
+        arkProvider: ctx.arkProvider,
+        indexerProvider: ctx.indexerProvider,
+      });
+
+      return postSigned<{ ok: true }>(
+        `/admin/disputes/${orderId}/cosign`,
+        {
+          disputeArkTxid: cosigned.disputeArkTxid,
+          serverSignedCheckpoints: cosigned.serverSignedCheckpoints,
+          adminSignedCheckpoints: cosigned.adminSignedCheckpoints,
+        },
+        ctx.privateKey
+      );
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["admin-dispute", orderId] });
+      void queryClient.invalidateQueries({ queryKey: ["admin-disputes"] });
+      toast.success("Settlement co-signed.");
     },
     onError: (err: unknown) => {
       const msg = err instanceof Error ? err.message : "An error occurred during the operation";

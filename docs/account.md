@@ -1,7 +1,7 @@
 # Domain `(account)` — Authenticated user area
 
 Area reserved for logged-in users. All APIs require `requireSessionRoute()` and every mutation
-is **signed** (`verifySignedJsonBody`, see [crypto/signing.md](./crypto/signing.md)). It gathers
+is **signed** (`signedRoute`, see [crypto/signing.md](./crypto/signing.md)). It gathers
 five sub-flows: **cart**, **orders**, **stock**, **wallet**, **chat**.
 
 ## Pages
@@ -9,7 +9,7 @@ five sub-flows: **cart**, **orders**, **stock**, **wallet**, **chat**.
 - `cart` — cart.
 - `orders/buying` · `orders/selling` · `orders/[id]` — orders as buyer/seller and detail.
 - `stocks` · `stocks/[productSlug]` — seller stock management.
-- `dashboard/wallet` — Arkade wallet (client-side).
+- `dashboard` — Arkade wallet (client-side), preceded by a «Your public key» card (`src/components/account-pubkey-card.tsx`: `session.user.pubkey` from `useSession()`, read-only, with copy).
 
 ## Entities involved
 

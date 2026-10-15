@@ -5,6 +5,10 @@ ECDH secp256k1 → HKDF-SHA256 → AES-256-GCM, `src/lib/crypto/ecies.ts` + `mes
 isomorphic). The server **never sees** the plaintext nor any private key. For the chat endpoints see
 [account/chat.md](../account/chat.md) (buyer↔seller) and [admin.md](../admin.md) (admin read access).
 
+> The same envelope scheme (`buildEnvelope` / `openEnvelope` / `rewrapCekForRecipient`) is shared with
+> **license key codes**, which use `KeyCodeKey` instead of `MessageKey` (seller → buyer → arbiter
+> wraps): see [at-rest.md](./at-rest.md).
+
 ## Envelope and `MessageKey`
 
 The client builds an envelope: a single random **CEK** encrypts the content, then the CEK is
@@ -43,8 +47,18 @@ Without this, post-dispute messages would have the `MessageKey` only for buyer/s
 would see them as raw `v1:` ciphertext. The admin's messages (`admin-message`) are already wrapped
 toward buyer + seller + admin.
 
-> **Requirement**: the admin must be logged in with `ADMIN_MNEMONIC` + `ADMIN_PASSPHRASE`, so that the
-> privkey in memory matches the `arbiterPubkey` used as recipient.
+## Authorship and ordering
+
+Encryption hides the content; it does not prove who wrote a message or that none was dropped. Every
+message is therefore also a **signed action** (`POST /api/chat/[id]/message` / `admin-message`) linked
+to its `Message` row, whose signed body carries `prevHash` (the hash of the previous message's signed
+action, or the chat genesis hash): the browser verifies each message's author and signature and the
+unbroken chain before decrypting it. Details, rendering states and limits in
+[verification.md](./verification.md).
+
+> **Requirement**: the admin must be logged in with the identity whose pubkey is `ADMIN_PUBKEY`, so
+> that the privkey in the browser's memory matches the `arbiterPubkey` used as recipient. The server
+> only ever knows the public key; decryption happens client-side.
 
 > The **authorization** gate (who can read/write chat, attachments and key codes based on the dispute
 > status) is in [admin.md](../admin.md) (`src/lib/backend/dispute-access.ts`). Here we describe only

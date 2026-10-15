@@ -15,7 +15,8 @@
     "db:migrate": "prisma migrate deploy",
     "db:migrate:dev": "prisma migrate dev",
     "db:seed": "tsx src/db/seed.ts",
-    "db:anti-seed": "tsx src/db/anti-seed.ts"
+    "db:anti-seed": "tsx src/db/anti-seed.ts",
+    "derive:pubkey": "tsx src/scripts/derive-pubkey.ts"
   },
   "prisma": {
     "seed": "tsx src/db/seed.ts"
@@ -77,6 +78,7 @@
     "prisma": "^7.8.0",
     "tailwindcss": "^4",
     "tsx": "^4.21.0",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vercel": "^64.2.0"
   }
 }

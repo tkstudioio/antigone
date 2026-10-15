@@ -1,6 +1,7 @@
 "use client";
 
 import { signMessage } from "@/lib/auth/signature";
+import { postSigned } from "@/lib/auth/signed-request";
 import { decryptMnemonic, encryptMnemonic } from "@/lib/auth/vault";
 import { backend } from "@/lib/backend";
 import { derivePubkey, generateMnemonic, mnemonicToPrivateKey } from "@/lib/utils";
@@ -113,13 +114,8 @@ export function useCreateAccountMutation() {
       const privateKey = mnemonicToPrivateKey(mnemonic, passphrase);
       const pubkey = derivePubkey(privateKey);
 
-      const signature = signMessage(`${username} ${pubkey}`, privateKey);
-
-      await backend.post("/auth/register", {
-        pubkey,
-        username,
-        signature,
-      });
+      // Registration is signed with the standard envelope; the signer is the body `pubkey`.
+      await postSigned("/auth/register", { pubkey, username }, privateKey);
 
       // The mnemonic is never stored in plaintext: only encrypted with the passphrase.
       const vault = await encryptMnemonic(mnemonic, passphrase);
@@ -171,13 +167,8 @@ export function useRestoreAccountMutation() {
       const privateKey = mnemonicToPrivateKey(values.mnemonic, values.passphrase);
       const pubkey = derivePubkey(privateKey);
 
-      const signature = signMessage(`${values.username} ${pubkey}`, privateKey);
-
-      await backend.post("/auth/register", {
-        pubkey,
-        username: values.username,
-        signature,
-      });
+      // Registration is signed with the standard envelope; the signer is the body `pubkey`.
+      await postSigned("/auth/register", { pubkey, username: values.username }, privateKey);
 
       const vault = await encryptMnemonic(values.mnemonic, values.passphrase);
       const newAccountsList = accounts.some((a) => a.pubkey === pubkey)

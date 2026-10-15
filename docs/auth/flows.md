@@ -5,20 +5,26 @@ Endpoints and verification steps of the auth flows. Key derivation and the vault
 
 ## API and entities
 
-| Component          | Path                                                                  |
-| ------------------ | --------------------------------------------------------------------- |
-| Challenge          | `src/app/api/auth/challenge/route.ts`                                 |
-| Login (NextAuth)   | `src/app/api/auth/[...nextauth]/route.ts` + `src/lib/auth-options.ts` |
-| Login (standalone) | `src/app/api/auth/login/route.ts`                                     |
-| Registration       | `src/app/api/auth/register/route.ts`                                  |
-| Entities           | `Account`, `Challenge` (`prisma/schema.prisma`)                       |
+| Component        | Path                                                                  |
+| ---------------- | --------------------------------------------------------------------- |
+| Challenge        | `src/app/api/auth/challenge/route.ts`                                 |
+| Login (NextAuth) | `src/app/api/auth/[...nextauth]/route.ts` + `src/lib/auth-options.ts` |
+| Registration     | `src/app/api/auth/register/route.ts`                                  |
+| Entities         | `Account`, `Challenge` (`prisma/schema.prisma`)                       |
 
 ## Registration — `POST /api/auth/register`
 
-1. Body `{ pubkey, username, signature }` validated with `registerSchema` (`username` ≥ 2 characters;
-   the `create` form requires ≥ 6 client-side).
-2. Verifies the Schnorr signature over `"${username} ${pubkey}"`. Invalid signature → 401.
-3. `upsert` of the `Account` row by `pubkey` (creates or updates `username`); DB error → 500.
+The route is wrapped in `signedRoute` with signer `body-pubkey` (see [crypto/signing.md](../crypto/signing.md)):
+the client sends the standard v2 signed envelope (`postSigned("/auth/register", …)`, signature/ts/nonce
+in headers) signed with the freshly derived private key; no session exists yet.
+
+1. The envelope is verified against the `pubkey` inside the body. Missing headers / invalid signature
+   / `pubkey` ≠ signer → 401; replayed nonce → 409 (so an old captured registration can no longer
+   revert a username).
+2. Body `{ pubkey, username }` validated with `registerSchema` (`username` ≥ 2 characters;
+   the `create` form requires ≥ 6 client-side) → 422 otherwise.
+3. **In-memory** rate limit (5/min per IP, falling back to the pubkey) → 429.
+4. `upsert` of the `Account` row by `pubkey` (creates or updates `username`); DB error → 500.
 
 No challenge required. It is the same route used both by `create` (generated mnemonic) and by
 `restore` (provided mnemonic).
@@ -34,7 +40,7 @@ No challenge required. It is the same route used both by `create` (generated mne
 
 ## Login (the real UI flow) — NextAuth `[...nextauth]`
 
-Sign in from the UI does **not** use `/api/auth/login`: the `useLoginMutation` hook
+Sign in from the UI: the `useLoginMutation` hook
 (`src/hooks/accounts.ts`) decrypts the mnemonic from the `vault` with the passphrase
 (`decryptMnemonic`), derives the privkey with the passphrase as the 13th word, obtains a nonce from
 `/api/auth/challenge`, signs `"${nonce} ${pubkey}"` with that privkey, and calls
@@ -52,26 +58,16 @@ Sign in from the UI does **not** use `/api/auth/login`: the `useLoginMutation` h
 On success, `useLoginMutation` calls `profileStore.setAccount({ username, pubkey, privateKey })`
 (building the Arkade wallet/provider from the already-unlocked privkey) and redirects to `/`.
 
-## Login (standalone route) — `POST /api/auth/login`
-
-A separate route that replicates the verification steps of the NextAuth flow, but does **not** check
-the existence of the `Account` and issues a JWT with `{ sub: pubkey, iat, exp }` (without `username`),
-returned as `text/plain`. It is currently not the path used by the UI (duplication to be consolidated
-with `auth-options.ts`).
-
 ## NextAuth session
 
 - `CredentialsProvider` in `src/lib/auth-options.ts`, `jwt` strategy, `maxAge` **24h**.
-- `jwt` callback: copies `token/pubkey/username` from `user`; derives the admin pubkey from
-  `ADMIN_MNEMONIC` and sets `token.isAdmin = (adminPubkey === token.pubkey)`. The derivation happens
-  **on every invocation of the callback**, not just once at startup.
+- `jwt` callback: copies `token/pubkey/username` from `user`; reads the admin pubkey from
+  `getAdminPubkey()` (the memoized, validated `ADMIN_PUBKEY` env — a public key, no derivation) and
+  sets `token.isAdmin = (adminPubkey === token.pubkey)` on every invocation of the callback (always
+  `false` when `ADMIN_PUBKEY` is missing/invalid).
 - `session` callback: propagates `token`, `pubkey`, `username` and `isAdmin` onto
   `session`/`session.user` (default `isAdmin: false`).
 
 ## Notes / technical debt
 
-- There are **two login implementations** (`/api/auth/login` and `authorize` in `auth-options.ts`)
-  with misaligned JWTs (one without `username` and without the account check): to be consolidated.
-- The admin pubkey is re-derived from the mnemonic on every `jwt` callback (caching at startup is
-  possible); also, some intermediate variables have unclear naming.
 - Application JWT expiry (1h) vs NextAuth session (24h): verify the alignment if relevant.

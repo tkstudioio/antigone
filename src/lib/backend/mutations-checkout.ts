@@ -47,11 +47,42 @@ type EscrowOptions = {
   dustLimit: number;
   /** Checkout request signature, reused as the order chat's signature. */
   signature: string;
+  /** The persisted checkout `SignedAction`: the buyer-signed terms, linked to every created order. */
+  actionId: number;
 };
+
+/** One line of the buyer-signed terms (what the buyer saw in the cart and agreed to pay). */
+export type CheckoutItem = { keyId: number; sellerPubkey: string; price: number };
+
+/** Thrown inside the transaction when a requested key no longer matches the signed terms. */
+class CheckoutTermsChangedError extends Error {}
 
 export async function processCheckout(
   buyerPubkey: string,
+  items: CheckoutItem[],
+  escrowOpts: EscrowOptions
+): Promise<CheckoutResult | { error: string; status: number }> {
+  const keyIds = items.map((i) => i.keyId);
+  const signedTerms = new Map(items.map((i) => [i.keyId, i]));
+
+  try {
+    return await runCheckout(buyerPubkey, keyIds, signedTerms, escrowOpts);
+  } catch (err) {
+    if (err instanceof CheckoutTermsChangedError) {
+      return {
+        error:
+          "A price or seller changed since you added the items to the cart: review the cart and try again",
+        status: 409,
+      };
+    }
+    throw err;
+  }
+}
+
+async function runCheckout(
+  buyerPubkey: string,
   keyIds: number[],
+  signedTerms: Map<number, CheckoutItem>,
   escrowOpts: EscrowOptions
 ): Promise<CheckoutResult> {
   return db.$transaction(async (tx) => {
@@ -68,6 +99,15 @@ export async function processCheckout(
       },
       include: { seller: { select: { pubkey: true, username: true } } },
     });
+
+    // The buyer signed these exact terms: a key whose price or seller differs from what the buyer
+    // saw (a seller repriced it, or the server substituted it) must not be sold under that signature.
+    for (const k of keys) {
+      const signed = signedTerms.get(k.id);
+      if (!signed || signed.price !== k.price || signed.sellerPubkey !== k.sellerPubkey) {
+        throw new CheckoutTermsChangedError();
+      }
+    }
 
     const groupedKeys = Object.groupBy(keys, (k) => k.sellerPubkey);
 
@@ -88,6 +128,7 @@ export async function processCheckout(
           totalSats,
           platformFee,
           status: "pending",
+          checkoutActionId: escrowOpts.actionId,
         },
         select: { id: true, status: true },
       });

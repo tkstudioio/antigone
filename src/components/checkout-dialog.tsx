@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { toast } from "react-toastify";
 import { Loader2, X } from "lucide-react";
 import {
@@ -13,7 +14,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { useCart, useCheckout } from "@/hooks/cart";
-import type { CartProduct } from "@/hooks/cart";
+import type { ArbiterChange, CartProduct, CheckoutItemInput } from "@/hooks/cart";
+import { ArbiterChangeDialog } from "@/components/arbiter-change-dialog";
 import { formatPrice } from "@/lib/utils";
 import { PLATFORM_FEE_PERCENT } from "@/lib/fees";
 import { Large } from "./ui/typography";
@@ -30,7 +32,6 @@ type Order = {
     price: number;
   }>;
   subtotal: number;
-  keyIds: number[];
 };
 
 function buildOrders(products: CartProduct[]): Order[] {
@@ -51,7 +52,6 @@ function buildOrders(products: CartProduct[]): Order[] {
             },
           ],
           subtotal: tier.price * tier.quantity,
-          keyIds: [...tier.keyIds],
         });
       } else {
         existing.items.push({
@@ -60,12 +60,27 @@ function buildOrders(products: CartProduct[]): Order[] {
           price: tier.price,
         });
         existing.subtotal += tier.price * tier.quantity;
-        existing.keyIds.push(...tier.keyIds);
       }
     }
   }
 
   return Array.from(groupMap.values());
+}
+
+/**
+ * The terms the buyer signs: every reserved key with the seller and price the cart shows. The server
+ * rejects the checkout (409) if any of them changed, so the buyer never pays a price they did not see.
+ */
+function buildSignedItems(products: CartProduct[]): CheckoutItemInput[] {
+  return products.flatMap((product) =>
+    product.tiers.flatMap((tier) =>
+      tier.keyIds.map((keyId) => ({
+        keyId,
+        sellerPubkey: tier.sellerPubkey,
+        price: tier.price,
+      }))
+    )
+  );
 }
 
 type Props = {
@@ -77,6 +92,7 @@ export function CheckoutDialog({ open, onOpenChange }: Props) {
   const aspInfo = useWalletAspInfo();
   const cartQuery = useCart();
   const checkout = useCheckout();
+  const [arbiterChange, setArbiterChange] = useState<ArbiterChange | null>(null);
 
   const products = cartQuery.data?.products ?? [];
   const orders = buildOrders(products);
@@ -90,99 +106,121 @@ export function CheckoutDialog({ open, onOpenChange }: Props) {
   const feeEstimate = platformFee + dustFee;
 
   const grandTotalWithFee = grandTotal + feeEstimate;
-  const allKeyIds = orders.flatMap((g) => g.keyIds);
+  const items = buildSignedItems(products);
 
   async function handleConfirm() {
-    if (allKeyIds.length === 0) return;
+    if (items.length === 0) return;
 
     try {
-      await checkout.mutateAsync({ keyIds: allKeyIds });
-      toast.success("Order confirmed");
+      const result = await checkout.mutateAsync({ items });
+      const change = result.arbiterChanges[0];
+      if (change) {
+        // The order exists but stays unpaid: the arbiter differs from the one this browser trusts.
+        setArbiterChange(change);
+        toast.warning(
+          "Order created, but its arbiter changed: payment is blocked until you review it"
+        );
+      } else {
+        toast.success("Order confirmed");
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Error during checkout");
     }
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Send the funds to escrow</DialogTitle>
-          <DialogDescription>
-            Address verified client-side. Send the indicated amount to each escrow to complete the
-            order.
-          </DialogDescription>
-        </DialogHeader>
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Send the funds to escrow</DialogTitle>
+            <DialogDescription>
+              Address verified client-side. Send the indicated amount to each escrow to complete the
+              order.
+            </DialogDescription>
+          </DialogHeader>
 
-        {orders.map((order) => (
-          <>
-            <Card key={order.sellerPubkey} variant={"ghost"}>
-              <CardHeader className="px-0!">
-                <CardTitle>{order.sellerUsername}</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-1 px-0!">
-                {order.items.map((item, index) => (
-                  <div
-                    key={index}
-                    className="flex items-center justify-between text-sm text-muted-foreground"
-                  >
-                    <span className="flex items-center gap-1">
-                      {item.quantity}
-                      <X className="inline size-3" />
-                      {item.productName}
-                      <span className="text-xs text-muted-foreground">
-                        (<Satoshi className="inline size-4" />
-                        {formatPrice(item.price)})
+          {orders.map((order) => (
+            <>
+              <Card key={order.sellerPubkey} variant={"ghost"}>
+                <CardHeader className="px-0!">
+                  <CardTitle>{order.sellerUsername}</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-1 px-0!">
+                  {order.items.map((item, index) => (
+                    <div
+                      key={index}
+                      className="flex items-center justify-between text-sm text-muted-foreground"
+                    >
+                      <span className="flex items-center gap-1">
+                        {item.quantity}
+                        <X className="inline size-3" />
+                        {item.productName}
+                        <span className="text-xs text-muted-foreground">
+                          (<Satoshi className="inline size-4" />
+                          {formatPrice(item.price)})
+                        </span>
                       </span>
-                    </span>
+
+                      <span className="font-medium text-foreground">
+                        <Satoshi className="inline size-4" />
+                        {formatPrice(item.price * item.quantity)}
+                      </span>
+                    </div>
+                  ))}
+                  <div className="flex items-center justify-between text-sm text-muted-foreground">
+                    <span className="flex items-center gap-1">Platform fee</span>
 
                     <span className="font-medium text-foreground">
                       <Satoshi className="inline size-4" />
-                      {formatPrice(item.price * item.quantity)}
+                      {formatPrice(Math.ceil((order.subtotal * PLATFORM_FEE_PERCENT) / 100) + dust)}
                     </span>
                   </div>
-                ))}
-                <div className="flex items-center justify-between text-sm text-muted-foreground">
-                  <span className="flex items-center gap-1">Platform fee</span>
+                </CardContent>
+              </Card>
+              <Separator />
+            </>
+          ))}
 
-                  <span className="font-medium text-foreground">
-                    <Satoshi className="inline size-4" />
-                    {formatPrice(Math.ceil((order.subtotal * PLATFORM_FEE_PERCENT) / 100) + dust)}
-                  </span>
-                </div>
-              </CardContent>
-            </Card>
-            <Separator />
-          </>
-        ))}
+          <div className="flex justify-between items-center">
+            <Large>Total:</Large>
+            <Large>
+              <Satoshi className="inline" /> {formatPrice(grandTotalWithFee)}
+            </Large>
+          </div>
 
-        <div className="flex justify-between items-center">
-          <Large>Total:</Large>
-          <Large>
-            <Satoshi className="inline" /> {formatPrice(grandTotalWithFee)}
-          </Large>
-        </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={checkout.isPending}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleConfirm} disabled={checkout.isPending || items.length === 0}>
+              {checkout.isPending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Confirming…
+                </>
+              ) : (
+                "Confirm order"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-        <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={checkout.isPending}
-          >
-            Cancel
-          </Button>
-          <Button onClick={handleConfirm} disabled={checkout.isPending || allKeyIds.length === 0}>
-            {checkout.isPending ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Confirming…
-              </>
-            ) : (
-              "Confirm order"
-            )}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      {arbiterChange && (
+        <ArbiterChangeDialog
+          open
+          onOpenChange={(next) => {
+            if (!next) setArbiterChange(null);
+          }}
+          pinned={arbiterChange.pinned}
+          seen={arbiterChange.seen}
+        />
+      )}
+    </>
   );
 }

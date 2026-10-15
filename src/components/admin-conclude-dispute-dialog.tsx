@@ -5,7 +5,7 @@ import { useForm, useWatch, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 
-import type { OrderDetail } from "@/lib/backend/query-orders";
+import type { OrderDetailView } from "@/hooks/orders";
 import { useAdminConcludeDispute, useAdminFeeConfig } from "@/hooks/admin";
 import {
   CONCLUSION_STATUS_LABELS,
@@ -46,7 +46,7 @@ const formSchema = z.object({
 type FormValues = z.infer<typeof formSchema>;
 
 type Props = {
-  order: OrderDetail;
+  order: OrderDetailView;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 };
@@ -72,7 +72,8 @@ export function AdminConcludeDisputeDialog({ order, open, onOpenChange }: Props)
   const wasOpen = useRef(false);
   useEffect(() => {
     if (open && !wasOpen.current) {
-      const refunded = order.items.filter((i) => i.refunded).map((i) => i.keyId);
+      // Undelivered keys can only be refunded, so they are always pre-checked.
+      const refunded = order.items.filter((i) => i.refunded || !i.delivered).map((i) => i.keyId);
       reset({
         favouredRole: order.favouredRole === "buyer" ? "buyer" : "seller",
         refundedKeyIds: refunded,
@@ -82,7 +83,12 @@ export function AdminConcludeDisputeDialog({ order, open, onOpenChange }: Props)
     wasOpen.current = open;
   }, [open, order, reset]);
 
-  const refundedKeyIds = useWatch({ control, name: "refundedKeyIds" }) ?? [];
+  const watchedKeyIds = useWatch({ control, name: "refundedKeyIds" }) ?? [];
+
+  // A key the seller never wrapped toward the buyer cannot be retained: the buyer could not open it.
+  // Such keys are always part of the refund set (mirrors the server-side 422).
+  const undeliveredKeyIds = order.items.filter((i) => !i.delivered).map((i) => i.keyId);
+  const refundedKeyIds = [...new Set([...watchedKeyIds, ...undeliveredKeyIds])];
 
   // Derived from the checked keys — the single source of truth (mirrors the server-side check).
   const watchedRefund = order.items
@@ -109,6 +115,7 @@ export function AdminConcludeDisputeDialog({ order, open, onOpenChange }: Props)
   const breakdownValid = sellerReceives >= 0;
 
   function toggleKeyId(keyId: number) {
+    if (undeliveredKeyIds.includes(keyId)) return;
     if (refundedKeyIds.includes(keyId)) {
       setValue(
         "refundedKeyIds",
@@ -127,17 +134,18 @@ export function AdminConcludeDisputeDialog({ order, open, onOpenChange }: Props)
   }
 
   function deselectAll() {
-    setValue("refundedKeyIds", []);
+    // Undelivered keys stay in the refund set (refund only).
+    setValue("refundedKeyIds", undeliveredKeyIds);
   }
 
-  const onSubmit = handleSubmit((data: FormValues) => {
+  const onSubmit = handleSubmit(() => {
     concludeMutation.mutate(
       {
         orderId: order.id,
         refundAmount: watchedRefund,
         conclusionStatus,
         favouredRole,
-        refundedKeyIds: data.refundedKeyIds,
+        refundedKeyIds,
       },
       {
         onSuccess: () => {
@@ -177,13 +185,21 @@ export function AdminConcludeDisputeDialog({ order, open, onOpenChange }: Props)
                     <Checkbox
                       id={`key-${item.keyId}`}
                       checked={refundedKeyIds.includes(item.keyId)}
+                      disabled={!item.delivered}
                       onCheckedChange={() => toggleKeyId(item.keyId)}
                     />
                     <label
                       htmlFor={`key-${item.keyId}`}
                       className="flex flex-1 items-center justify-between gap-2 cursor-pointer"
                     >
-                      <span className="font-medium">{item.productName}</span>
+                      <span className="flex flex-col">
+                        <span className="font-medium">{item.productName}</span>
+                        {!item.delivered && (
+                          <span className="text-xs text-muted-foreground">
+                            Not delivered — refund only
+                          </span>
+                        )}
+                      </span>
                       <span className="text-muted-foreground shrink-0">
                         {formatPrice(item.price)}
                       </span>

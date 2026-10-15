@@ -1,25 +1,62 @@
 # Encryption at rest
 
-Two categories of data are encrypted at rest with **AES-256-GCM** server-side (same `ENCRYPTION_KEY`,
-32 bytes base64, server-only env): the **license key codes** and the **chat attachments**. Container
-in `src/lib/crypto/symmetric.ts` (`encrypt`/`decrypt` for strings, `encryptBytes`/`decryptBytes` for
-binaries). It protects against a leak of the DB / storage, **not** against a compromised application
-server.
+Two categories of confidential data, protected in two different ways:
 
-## License key codes
+- **License key codes** are **end-to-end encrypted** in the browser (same envelope scheme as the chat,
+  see [messaging.md](./messaging.md)). The server stores only ciphertext and per-recipient wrapped
+  keys: **there is no server-side key that can read a code**, so a malicious or compromised host cannot
+  read or steal the goods.
+- **Chat attachments** are encrypted at rest with **AES-256-GCM server-side** (`ENCRYPTION_KEY`, 32 bytes
+  base64, server-only env; `encryptBytes`/`decryptBytes` in `src/lib/crypto/symmetric.ts`). That only
+  protects against a leak of the DB / storage, **not** against a compromised application server
+  (E2E attachments are a roadmap follow-up).
 
-`Key.code` is stored encrypted in the format `v1:<iv>:<tag>:<ciphertext>`; `Key.code_hash` is an HMAC
-of the plaintext used for **deduplication** on upload.
+## License key codes (E2E)
 
-- **Write** (`upsertStockKeys`, see [account/stocks.md](../account/stocks.md)): encrypts the code and
-  stores the `code_hash` HMAC for dedup.
-- **Read** (`queryStockTier`, `query-orders`): decrypts server-side via `safeDecryptCode` before
-  returning the code to an authorized seller/buyer/admin (the visibility rules are in the respective
-  domains; for the admin the gate is in [admin.md](../admin.md)).
+Code in `src/lib/crypto/code-envelope.ts` (isomorphic, a thin layer over `message-envelope.ts`:
+`buildEnvelope`, `openEnvelope`, `rewrapCekForRecipient`). Plaintext codes and private keys only ever
+exist in the browser.
 
-Decryption is **fault-tolerant**: a legacy cleartext row is returned as-is; an encrypted row that does
-not authenticate (e.g. `ENCRYPTION_KEY` different from the one used on write, or a corrupted row)
-returns `code: null` and logs a warning, instead of making the whole endpoint fail with a 500.
+`Key.code` holds the **ciphertext** (`v1:<iv>:<ciphertext>`, the ECIES/AES-GCM sealed format of
+`ecies.ts`) of a single envelope: one content ciphertext under a random CEK. The CEK is wrapped **once
+per recipient** in a `KeyCodeKey` row (`keyId`, `recipientPubkey`, `wrapperPubkey`, `wrappedCek`;
+unique `(keyId, recipientPubkey)`; cascades with the `Key`). `wrapperPubkey` is the ECDH counterpart the
+recipient needs to unwrap and is **always set server-side** to the signer.
+
+| Step     | Who / where                                                         | What happens                                                                                                                                                                   |
+| -------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Upload   | Seller's browser → `POST /api/stocks`                               | Trim + dedup, encrypt each code into an envelope **addressed to the seller only**, compute the dedup hash. The server stores `Key.code` + one seller `KeyCodeKey` per key.     |
+| Delivery | Seller's browser → `POST /api/orders/[id]/confirm` (or `/deliver`)  | Unwrap each key's CEK and re-wrap it toward the buyer (`rewrapCekForRecipient`). The server requires **exactly one wrap per order key**, all for the buyer, and stores them.   |
+| Dispute  | Either party's browser → `POST /api/orders/[id]/grant-arbiter-keys` | Re-wrap the CEKs the party can open toward the escrow arbiter (`ADMIN_PUBKEY`). Dispute only; callable again while the dispute lasts.                                          |
+| Read     | Seller / buyer / admin browser                                      | The API returns `{ ciphertext, wrappedCek, wrapperPubkey }` for the caller's own `KeyCodeKey`; the browser decrypts (`openStoredCode`), same pattern as `decryptChatMessages`. |
+
+### Dedup hash (`Key.code_hash`)
+
+`code_hash` = HMAC-SHA256 (hex) of the trimmed code, keyed by a secret derived with **HKDF from the
+seller's private key** (info `antigone/code-dedup/v1`, `computeCodeHash`). It is computed **client-side**
+and the server cannot brute-force short codes from it. It is per seller: dedup is on
+`(sellerPubkey, productId, codeHash)` (cross-seller detection is intentionally not provided).
+
+### Who can open a code
+
+- **Seller**: always, for the keys they uploaded (own `KeyCodeKey`).
+- **Buyer**: only after delivery (a buyer `KeyCodeKey` exists) **and** once the key is assigned to them
+  (`Key.buyerPubkey`, set at confirmation or by a verdict that retains the key). Before that the API
+  returns no ciphertext and the UI shows `—`.
+- **Arbiter (admin)**: only once a dispute party granted it (`grant-arbiter-keys`), and only while the
+  dispute gate is open (`mayAdminReadOrder`, see [admin.md](../admin.md)). Otherwise the dispute
+  detail shows «Not shared with the arbiter yet».
+
+### Failure modes
+
+- A wrap that does not open (corrupt row, or a malicious seller delivering garbage) never throws: the
+  UI shows «Unable to decrypt — open a dispute». The seller's signed confirm request
+  (`SignedAction`, which now stores the ciphertext-only body) is the evidence.
+- A locked wallet (no private key in memory) blocks upload / confirm / deliver («Wallet unavailable»).
+- Legacy rows encrypted with the old server-side key (`v1:<iv>:<tag>:<ct>`, 4 parts) are **not readable
+  anymore** (the UI shows `—`); they are development data to wipe with `yarn db:anti-seed`. The
+  server-side code helpers (`encryptCode`, `hashCode`, `safeDecryptCode`) and the backfill script were
+  removed.
 
 ## Chat attachments (MinIO)
 

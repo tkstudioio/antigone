@@ -5,7 +5,7 @@ Persistence on **PostgreSQL** via Prisma Client (PostgreSQL provider, `@prisma/a
 ## Entities
 
 `prisma/schema.prisma`. Domain entities: `Account`, `Challenge`, `Product`, `Key` (license key for
-sale), `Favorite`, `Chat`, `Message`, `MessageKey`, `Escrow`, `Order`, `Review`. All
+sale), `KeyCodeKey`, `Favorite`, `Chat`, `Message`, `MessageKey`, `Escrow`, `Order`, `Review`, `SignedAction`. All
 column/table names are snake_case, preserved via `@map`/`@@map`.
 
 ### Key relations
@@ -13,11 +13,27 @@ column/table names are snake_case, preserved via `@map`/`@@map`.
 - A `Key` is linked to its escrow **indirectly** through its order:
   `Key.orderId → Order.escrowAddress → Escrow`. There is **no** direct key↔escrow FK.
 - `Order.escrow` is a navigable direct Prisma 1-1 relation toward `Escrow` (virtual field, **no new column**): `Order.escrowAddress @unique → Escrow.address @id`. It allows `include: { escrow: { select: { status: true } } }` without a separate query. Used by `queryDisputes()` to expose `escrowStatus` in the dispute list.
-- `Key.code` is encrypted at rest, `Key.code_hash` is an HMAC for dedup — see
-  [crypto/at-rest.md](./crypto/at-rest.md).
+- `Key.code` holds the **E2E ciphertext** of the license code and `Key.code_hash` a seller-keyed HMAC
+  for dedup (both computed client-side). `KeyCodeKey` (`key_code_key`) holds one wrapped content key
+  per recipient of a key (`keyId` → `Key` cascade, `recipientPubkey`, `wrapperPubkey`, `wrappedCek`,
+  `createdAt`; unique `(keyId, recipientPubkey)`): the seller at upload, the buyer on delivery, the
+  arbiter on dispute — see [crypto/at-rest.md](./crypto/at-rest.md).
 - The text of `Message`s is E2E-encrypted, with one `MessageKey` per recipient — see
   [crypto/messaging.md](./crypto/messaging.md).
 - `Escrow.arbiterPubkey` references the admin `Account` (created via `upsert` at checkout).
+- `SignedAction` (`signed_action`) — one row per verified signed mutation request: `pubkey`, `method`,
+  `path` (pathname + query), `ts` (BigInt ms), `nonce` (**unique** — the anti-replay store), `bodySha256`,
+  `body` (raw JSON text; null for binary bodies and for `POST /api/stocks`), `signature`, `createdAt`;
+  indexed on `pubkey`. It has **no FK** to `account` (a registration is signed before the account
+  exists); the domain tables reference it instead (below). See [crypto/signing.md](./crypto/signing.md).
+- **Links to `SignedAction`** (nullable FK columns on the domain rows, `ON DELETE SET NULL`; filled by the
+  handlers from `action.id`, returned by the API for client-side verification — see
+  [crypto/verification.md](./crypto/verification.md)):
+  `Message.signedActionId` (unique) + `Message.prevHash` (per-chat hash chain; `UNIQUE (chat_id,
+prev_hash)` keeps the chain linear), `Order.checkoutActionId` / `confirmActionId` (latest confirm
+  **or** deliver) / `disputeActionId` / `verdictActionId` (latest verdict), `KeyCodeKey.signedActionId`
+  (delivery / arbiter grant). Rows created before the links (and system messages) have them `NULL`;
+  there is no backfill.
 
 ## Enums
 

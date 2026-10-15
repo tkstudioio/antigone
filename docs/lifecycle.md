@@ -37,9 +37,11 @@ stateDiagram-v2
     completed --> [*]
 ```
 
-The conclusion is **not terminal at the order level**: as long as the escrow stays `disputed` (the
-Ark settlement is still pending), the admin can re-conclude and override the verdict — for
-example to change the favoured party. The verdict is only fixed once the escrow becomes terminal. The
+The conclusion is **not terminal at the order level**: as long as the escrow is `disputed` or
+`settlementPrepared` (the arbiter has not co-signed yet, funds still unspent), the admin can
+re-conclude and override the verdict — for example to change the favoured party. A re-conclusion in
+`settlementPrepared` discards the stored PSBTs and returns the escrow to `disputed`. The verdict is
+fixed once the arbiter co-signs (`settling`) and, of course, once the escrow becomes terminal. The
 **chat** follows the escrow, not the order: it stays open as long as the escrow is unsettled (closed
 by `concludeOrderAsAdmin` only if the escrow was never funded, otherwise by
 `finalizeDisputeSettlement`).
@@ -57,12 +59,15 @@ stateDiagram-v2
     buyerCheckpointsSigned --> completed: seller cashes out
 
     fundLocked --> disputed: open dispute
-    disputed --> settling: favoured party prepares settlement
-    settling --> completed: settled in seller's favour
-    settling --> refunded: settled with refund
+    disputed --> settlementPrepared: favoured party prepares settlement
+    settlementPrepared --> disputed: admin overrides verdict<br/>(prepared PSBTs discarded)
+    settlementPrepared --> settling: arbiter co-signs (admin's browser)
+    settling --> completed: favoured party finalizes (seller's favour)
+    settling --> refunded: favoured party finalizes (refund)
 
     fundLocked --> expiredSwept: VTXOs expire (batch sweep)
     disputed --> expiredSwept: VTXOs expire (batch sweep)
+    settlementPrepared --> expiredSwept: VTXOs expire (batch sweep)
 
     completed --> [*]
     refunded --> [*]
@@ -70,7 +75,9 @@ stateDiagram-v2
 ```
 
 - **Happy path** (`awaitingFunds` … `completed`): detail in [escrow/release.md](./escrow/release.md).
-- **Dispute** (`disputed` … `refunded`): detail in [escrow/dispute.md](./escrow/dispute.md).
+- **Dispute** (`disputed` … `refunded`): three signed steps — the favoured party prepares
+  (`settlementPrepared`), the arbiter co-signs in the admin's browser (`settling`), the favoured
+  party finalizes. The server holds no arbiter key. Detail in [escrow/dispute.md](./escrow/dispute.md).
 - **Sweep** (`expiredSwept`, terminal): the escrow's VTXOs expire at the Arkade batch expiry and are
   swept — the locked funds are no longer recoverable (not even via a unilateral exit). See
   [escrow/release.md](./escrow/release.md).
@@ -83,8 +90,11 @@ stateDiagram-v2
 
 How the two records line up at each milestone:
 
-| Milestone         | Order       | Escrow                                                                         |
-| ----------------- | ----------- | ------------------------------------------------------------------------------ |
-| Checkout          | `pending`   | `awaitingFunds`                                                                |
-| Seller confirms   | `completed` | `fundLocked` (until the release starts)                                        |
-| Dispute concluded | `concluded` | stays `disputed` if funded (settlement pending); else `completed` / `refunded` |
+| Milestone                | Order       | Escrow                                                                         |
+| ------------------------ | ----------- | ------------------------------------------------------------------------------ |
+| Checkout                 | `pending`   | `awaitingFunds`                                                                |
+| Seller confirms          | `completed` | `fundLocked` (until the release starts)                                        |
+| Dispute concluded        | `concluded` | stays `disputed` if funded (settlement pending); else `completed` / `refunded` |
+| Favoured party prepared  | `concluded` | `settlementPrepared` (awaiting the arbiter's co-signature)                     |
+| Arbiter co-signed        | `concluded` | `settling` (verdict now fixed)                                                 |
+| Favoured party finalized | `concluded` | `completed` (seller favoured) / `refunded`                                     |

@@ -4,10 +4,14 @@ import { useEffect, useRef, useState } from "react";
 import { match } from "ts-pattern";
 import { useSession } from "next-auth/react";
 import { useChat, useSendChatMessage, useUploadChatAttachment } from "@/hooks/chat";
-import type { AttachmentMeta } from "@/hooks/chat";
-import type { OrderDetail } from "@/lib/backend/query-orders";
-import type { ChatMessage } from "@/lib/backend/query-chat-types";
+import type { AttachmentMeta, VerifiedChatMessage } from "@/hooks/chat";
+import type { OrderDetailView } from "@/hooks/orders";
 import { MessageAttachment } from "@/components/message-attachment";
+import {
+  ChainGapBanner,
+  MessageVerificationBadge,
+  VerificationBadge,
+} from "@/components/verification-badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -16,7 +20,7 @@ import { IMAGE_MIME_ALLOWLIST, MAX_ATTACHMENT_BYTES } from "@/validators";
 
 type Props = {
   chatId: number;
-  order: OrderDetail;
+  order: OrderDetailView;
 };
 
 function MessageBubble({
@@ -24,18 +28,19 @@ function MessageBubble({
   currentPubkey,
   order,
 }: {
-  msg: ChatMessage;
+  msg: VerifiedChatMessage;
   currentPubkey: string | undefined;
-  order: OrderDetail;
+  order: OrderDetailView;
 }) {
   const isSystem = msg.isSystem;
 
   if (isSystem) {
     return (
-      <div className="flex justify-center my-1">
-        <span className="text-xs text-muted-foreground bg-muted px-3 py-1 rounded-full">
+      <div className="flex flex-col items-center gap-0.5 my-1">
+        <span className="text-xs italic text-muted-foreground bg-muted px-3 py-1 rounded-full">
           {msg.message ?? ""}
         </span>
+        <VerificationBadge status="system" className="text-[10px]" />
       </div>
     );
   }
@@ -43,6 +48,34 @@ function MessageBubble({
   const isBuyer = msg.senderPubkey === order.buyer.pubkey;
   const isSeller = msg.senderPubkey === order.seller.pubkey;
   const isAdmin = !isBuyer && !isSeller;
+  const tampered = msg.verification.status === "tampered";
+
+  const sentAt = new Date(msg.sentAt).toLocaleString("en-US", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+  // A message that failed verification is never rendered: its content may have been forged.
+  if (tampered) {
+    return (
+      <div
+        className={`flex flex-col gap-0.5 ${
+          isAdmin
+            ? "items-center"
+            : msg.senderPubkey === currentPubkey
+              ? "items-end"
+              : "items-start"
+        }`}
+      >
+        <div className="max-w-[75%] rounded-xl border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm">
+          <MessageVerificationBadge msg={msg} />
+        </div>
+        <span className="text-[10px] text-muted-foreground px-1">{sentAt}</span>
+      </div>
+    );
+  }
 
   if (isAdmin) {
     return (
@@ -54,14 +87,9 @@ function MessageBubble({
             </span>
           )}
           {msg.attachment != null && <MessageAttachment attachment={msg.attachment} />}
-          <span className="text-[10px] text-muted-foreground">
-            Admin ·{" "}
-            {new Date(msg.sentAt).toLocaleString("en-US", {
-              day: "2-digit",
-              month: "2-digit",
-              hour: "2-digit",
-              minute: "2-digit",
-            })}
+          <span className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+            Admin · {sentAt}
+            <MessageVerificationBadge msg={msg} />
           </span>
         </div>
       </div>
@@ -70,12 +98,6 @@ function MessageBubble({
 
   const isMine = msg.senderPubkey === currentPubkey;
   const senderLabel = isBuyer ? order.buyer.username : order.seller.username;
-  const sentAt = new Date(msg.sentAt).toLocaleString("en-US", {
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
 
   return (
     <div className={`flex flex-col gap-0.5 ${isMine ? "items-end" : "items-start"}`}>
@@ -87,10 +109,31 @@ function MessageBubble({
         {msg.message}
         {msg.attachment != null && <MessageAttachment attachment={msg.attachment} />}
       </div>
-      <span className="text-[10px] text-muted-foreground px-1">
+      <span className="flex items-center gap-1.5 text-[10px] text-muted-foreground px-1">
         {senderLabel} · {sentAt}
+        <MessageVerificationBadge msg={msg} />
       </span>
     </div>
+  );
+}
+
+/** A message preceded by the chain-gap banner when the hash chain breaks right before it. */
+function MessageRow({
+  msg,
+  currentPubkey,
+  order,
+}: {
+  msg: VerifiedChatMessage;
+  currentPubkey: string | undefined;
+  order: OrderDetailView;
+}) {
+  const v = msg.verification;
+  const gapBefore = (v.status === "verified" || v.status === "tampered") && v.gapBefore;
+  return (
+    <>
+      {gapBefore && <ChainGapBanner />}
+      <MessageBubble msg={msg} currentPubkey={currentPubkey} order={order} />
+    </>
   );
 }
 
@@ -101,9 +144,16 @@ export function OrderChatThread({ chatId, order }: Props) {
   // Once a dispute is open the admin must be able to read new messages too, so wrap them toward
   // the arbiter pubkey as well (grant-admin only re-wrapped the pre-dispute history).
   const disputeActive = order.status === "disputed" || order.status === "concluded";
-  const adminPubkey = disputeActive ? (order.escrow?.arbiterPubkey ?? null) : null;
+  // The TRUSTED arbiter (the pinned one): both who may author arbiter messages and who the
+  // post-dispute messages are wrapped toward.
+  const trustedArbiter = order.verification.trustedArbiterPubkey;
+  const adminPubkey = disputeActive ? trustedArbiter : null;
 
-  const chatQuery = useChat(chatId);
+  const chatQuery = useChat(chatId, {
+    buyerPubkey: order.buyer.pubkey,
+    sellerPubkey: order.seller.pubkey,
+    arbiterPubkey: trustedArbiter,
+  });
   const sendMutation = useSendChatMessage(chatId, {
     buyerPubkey: order.buyer.pubkey,
     sellerPubkey: order.seller.pubkey,
@@ -218,7 +268,7 @@ export function OrderChatThread({ chatId, order }: Props) {
               </p>
             ) : (
               data.messages.map((msg) => (
-                <MessageBubble key={msg.id} msg={msg} currentPubkey={currentPubkey} order={order} />
+                <MessageRow key={msg.id} msg={msg} currentPubkey={currentPubkey} order={order} />
               ))
             )}
             <div ref={bottomRef} />

@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { backend } from "@/lib/backend";
 import { postSigned, requestSigned } from "@/lib/auth/signed-request";
 import useProfileStore from "@/stores/profile";
+import { sealCodeForSeller, openStoredCode, type CodeStatus } from "@/lib/crypto/code-envelope";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -29,16 +30,25 @@ export type StockTier = {
   availableCount: number;
 };
 
-export type StockKey = {
+/** A stock key as returned by the API: E2E ciphertext + the seller's own wrapped content key. */
+export type StockKeyRaw = {
   id: string;
-  code: string | null;
+  ciphertext: string;
+  wrappedCek: string | null;
+  wrapperPubkey: string | null;
   createdAt: string;
+};
+
+/** A stock key after the browser decrypted it (`code` is null when it cannot be opened). */
+export type StockKey = StockKeyRaw & {
+  code: string | null;
+  codeStatus: CodeStatus;
 };
 
 export type StockTiersResponse = {
   product: { id: number; name: string; slug: string };
   tiers: StockTier[];
-  tierKeys: { price: number; availableCount: number; keys: StockKey[] } | null;
+  tierKeys: { price: number; availableCount: number; keys: StockKeyRaw[] } | null;
 };
 
 export type StockSortColumn = "name" | "availableKeysCount" | "lowestPrice";
@@ -68,17 +78,38 @@ export function useStockTiers(productId: number) {
   });
 }
 
+/**
+ * Keys of one tier. The API returns ciphertext + the seller's wrapped key; the codes are decrypted
+ * here with the private key held in memory (same pattern as `decryptChatMessages`).
+ */
 export function useStockTierKeys(
   productId: number,
   price: number,
   options: { enabled: boolean } = { enabled: true }
 ) {
+  const privateKey = useProfileStore((s) => s.account?.privateKey);
+  const pubkey = useProfileStore((s) => s.account?.pubkey);
   return useQuery({
-    queryKey: ["stocks", productId, "tiers", price, "keys"],
-    queryFn: () =>
-      backend
-        .get<StockTiersResponse>(`/stocks/${productId}`, { params: { price } })
-        .then((r) => r.data.tierKeys),
+    queryKey: ["stocks", productId, "tiers", price, "keys", pubkey, Boolean(privateKey)],
+    queryFn: async () => {
+      const { data } = await backend.get<StockTiersResponse>(`/stocks/${productId}`, {
+        params: { price },
+      });
+      const tier = data.tierKeys;
+      if (!tier) return null;
+      const keys: StockKey[] = await Promise.all(
+        tier.keys.map(async (k) => {
+          const { code, status } = await openStoredCode({
+            recipientPrivHex: privateKey,
+            ciphertext: k.ciphertext,
+            wrappedCek: k.wrappedCek,
+            wrapperPubkey: k.wrapperPubkey,
+          });
+          return { ...k, code, codeStatus: status };
+        })
+      );
+      return { ...tier, keys };
+    },
     enabled: options.enabled && productId > 0,
   });
 }
@@ -92,9 +123,13 @@ type CreateStockResult = {
   productSlug: string;
 };
 
+/**
+ * Upload keys. The codes never leave the browser in clear: each one is trimmed, deduplicated,
+ * encrypted into an envelope addressed to the seller only, and sent with a seller-keyed dedup hash.
+ */
 export function useCreateStock() {
   const queryClient = useQueryClient();
-  const privateKey = useProfileStore((s) => s.account?.privateKey);
+  const account = useProfileStore((s) => s.account);
 
   return useMutation({
     mutationFn: async (payload: {
@@ -102,8 +137,24 @@ export function useCreateStock() {
       price: number;
       codes: string[];
     }): Promise<CreateStockResult> => {
-      if (!privateKey) throw new Error("Wallet non disponibile");
-      return postSigned<CreateStockResult>("/stocks", payload, privateKey);
+      if (!account?.privateKey) throw new Error("Wallet unavailable");
+      const { privateKey, pubkey } = account;
+
+      const uniqueCodes = [
+        ...new Set(payload.codes.map((c) => c.trim()).filter((c) => c.length > 0)),
+      ];
+      if (uniqueCodes.length === 0) throw new Error("Enter at least one key");
+
+      const codes = await Promise.all(
+        uniqueCodes.map((code) =>
+          sealCodeForSeller({ sellerPrivHex: privateKey, sellerPubHex: pubkey, code })
+        )
+      );
+      return postSigned<CreateStockResult>(
+        "/stocks",
+        { productId: payload.productId, price: payload.price, codes },
+        privateKey
+      );
     },
     onSuccess: (_data, variables) => {
       void queryClient.invalidateQueries({ queryKey: ["stocks"] });

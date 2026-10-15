@@ -13,6 +13,7 @@ import {
   Hash,
   MessagesSquare,
   Package,
+  PenLine,
   ShieldCheck,
   Store,
   User,
@@ -20,7 +21,7 @@ import {
   Wallet,
 } from "lucide-react";
 
-import { useAdminDisputeDetail } from "@/hooks/admin";
+import { useAdminDisputeDetail, useCosignDisputeSettlement } from "@/hooks/admin";
 import { formatPrice } from "@/lib/utils";
 import { ORDER_STATUS_BADGE, ORDER_STATUS_LABELS } from "@/lib/orders-status";
 import type { EscrowStatus, OrderStatus } from "@/db/enums";
@@ -39,13 +40,16 @@ import {
 } from "@/components/ui/table";
 import { AdminConcludeDisputeDialog } from "@/components/admin-conclude-dispute-dialog";
 import { AdminChatThread } from "@/components/admin-chat-thread";
+import { OrderVerificationBanner } from "@/components/order-verification-banner";
+import { ActionVerificationBadge } from "@/components/verification-badge";
 import { OrderStepper } from "./order-stepper";
 import { H1, P } from "./ui/typography";
 import { EscrowFundingBar } from "./escrow-funding-bar";
 import { useEscrowFunding } from "@/hooks/orders";
 
-// A verdict is final only once the escrow is settled on-chain; until then the admin can re-conclude.
-const SETTLED_ESCROW_STATUSES = ["completed", "refunded", "expiredSwept"] as const;
+// A verdict is final once the arbiter co-signed (`settling`) or the escrow is settled; while the
+// escrow is `disputed` or `settlementPrepared` the admin can still re-conclude.
+const SETTLED_ESCROW_STATUSES = ["settling", "completed", "refunded", "expiredSwept"] as const;
 
 type Props = {
   orderId: number | null;
@@ -115,11 +119,12 @@ function PartyTile({
 
 export function AdminDisputeDetail({ orderId }: Props) {
   const detailQuery = useAdminDisputeDetail(orderId);
-  const funding = useEscrowFunding(orderId ?? undefined, {
+  // Funding facts come from the Ark indexer, read by this browser (not from our API).
+  const funding = useEscrowFunding(detailQuery.data?.escrow, {
     enabled: orderId != null && Boolean(detailQuery.data?.escrowAddress),
-    escrowStatus: detailQuery.data?.escrow?.status,
   });
   const [dialogOpen, setDialogOpen] = useState(false);
+  const cosign = useCosignDisputeSettlement(orderId ?? 0);
 
   async function copyToClipboard(text: string) {
     try {
@@ -169,13 +174,16 @@ export function AdminDisputeDetail({ orderId }: Props) {
         ))
         .with({ isSuccess: true }, ({ data: order }) => {
           const escrowStatus = order.escrow?.status;
-          // The verdict is locked only once the escrow is settled on-chain (or there is no escrow to
-          // settle and the order is already concluded). While the escrow stays `disputed` the admin
-          // can re-conclude — the CTA stays enabled and switches to "Aggiorna verdetto".
+          // The verdict is locked once the arbiter co-signed or the escrow is settled (or there is no
+          // escrow to settle and the order is already concluded). While the escrow is `disputed` or
+          // `settlementPrepared` the admin can re-conclude — the CTA stays enabled and switches to
+          // "Update verdict" (a re-conclusion discards the prepared settlement).
           const isSettled = escrowStatus
             ? (SETTLED_ESCROW_STATUSES as readonly string[]).includes(escrowStatus)
             : order.status === "concluded";
           const ctaLabel = order.status === "concluded" ? "Update verdict" : "Conclude";
+          // Co-signing and (re-)concluding stay disabled while the order fails verification.
+          const blocked = order.verification.blocked != null;
 
           // The platform fee was paid by the buyer on top of the goods price and is not docked from
           // the seller; only the buyer refund and the admin's arbitration share reduce the seller's
@@ -189,6 +197,8 @@ export function AdminDisputeDetail({ orderId }: Props) {
                 <H1>Dispute #{order.id}</H1>
                 <P>Opened on {new Date(order.createdAt).toLocaleDateString("en-US")}</P>
               </div>
+
+              <OrderVerificationBanner verification={order.verification} />
 
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
                 {/* Left column (1fr): summary + CTA, then lifecycle stepper */}
@@ -214,17 +224,43 @@ export function AdminDisputeDetail({ orderId }: Props) {
                         </span>
                       </div>
 
-                      {funding.data &&
+                      {order.escrow &&
                         escrowStatus !== "completed" &&
                         escrowStatus !== "refunded" && (
-                          <EscrowFundingBar
-                            total={funding.data.total}
-                            price={funding.data.price}
-                            expiresAt={funding.data.expiresAt}
-                            expirySoon={funding.data.expirySoon}
-                            swept={funding.data.swept}
-                          />
+                          <>
+                            {funding.data && !funding.unavailable && (
+                              <EscrowFundingBar
+                                total={funding.data.total}
+                                price={funding.data.price}
+                                expiresAt={funding.data.expiresAt}
+                                expirySoon={funding.data.expirySoon}
+                                swept={funding.data.swept}
+                              />
+                            )}
+                            {funding.unavailable && (
+                              <EscrowFundingBar total={0} price={order.escrow.price} unavailable />
+                            )}
+                          </>
                         )}
+
+                      <div className="flex flex-col gap-1.5">
+                        <ActionVerificationBadge
+                          verification={order.verification.terms}
+                          verifiedLabel="Order terms signed by the buyer — signature verified"
+                        />
+                        <ActionVerificationBadge
+                          verification={order.verification.confirm}
+                          verifiedLabel="Keys delivered by the seller — signature verified"
+                        />
+                        <ActionVerificationBadge
+                          verification={order.verification.dispute}
+                          verifiedLabel="Dispute opened by a party — signature verified"
+                        />
+                        <ActionVerificationBadge
+                          verification={order.verification.verdict}
+                          verifiedLabel="Verdict signed with your key — signature verified"
+                        />
+                      </div>
 
                       {/* Verdict — shown only after conclusion */}
                       {order.status === "concluded" && (
@@ -281,10 +317,21 @@ export function AdminDisputeDetail({ orderId }: Props) {
                         </>
                       )}
                     </CardContent>
-                    <CardFooter className="border-t border-border pt-4">
+                    <CardFooter className="flex-col gap-2 border-t border-border pt-4">
+                      {escrowStatus === "settlementPrepared" && (
+                        <Button
+                          onClick={() => cosign.mutate(order)}
+                          disabled={cosign.isPending || blocked}
+                          className="w-full"
+                        >
+                          <PenLine className="size-4" />
+                          {cosign.isPending ? "Co-signing…" : "Co-sign settlement"}
+                        </Button>
+                      )}
                       <Button
+                        variant={escrowStatus === "settlementPrepared" ? "outline" : "solid"}
                         onClick={() => setDialogOpen(true)}
-                        disabled={isSettled}
+                        disabled={isSettled || blocked}
                         className="w-full"
                       >
                         <Gavel className="size-4" />
@@ -389,13 +436,26 @@ export function AdminDisputeDetail({ orderId }: Props) {
                               <TableRow key={item.keyId}>
                                 <TableCell className="font-medium">{item.productName}</TableCell>
                                 <TableCell>
-                                  {item.code != null ? (
-                                    <span className="font-mono text-xs text-muted-foreground">
-                                      {item.code}
-                                    </span>
-                                  ) : (
-                                    "—"
-                                  )}
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    {item.code != null ? (
+                                      <span className="font-mono text-xs text-muted-foreground">
+                                        {item.code}
+                                      </span>
+                                    ) : item.codeStatus === "undecryptable" ? (
+                                      <span className="text-xs text-destructive">
+                                        Unable to decrypt
+                                      </span>
+                                    ) : (
+                                      <span className="text-xs text-muted-foreground">
+                                        Not shared with the arbiter yet
+                                      </span>
+                                    )}
+                                    {!item.delivered && (
+                                      <Badge variant="outline" action="muted">
+                                        Not delivered
+                                      </Badge>
+                                    )}
+                                  </div>
                                 </TableCell>
                                 <TableCell className="text-right">
                                   {formatPrice(item.price)}
@@ -424,7 +484,13 @@ export function AdminDisputeDetail({ orderId }: Props) {
                       </CardTitle>
                     </CardHeader>
                     {order.chatId != null ? (
-                      <AdminChatThread chatId={order.chatId} />
+                      <AdminChatThread
+                        chatId={order.chatId}
+                        parties={{
+                          buyerPubkey: order.buyer.pubkey,
+                          sellerPubkey: order.seller.pubkey,
+                        }}
+                      />
                     ) : (
                       <CardContent>
                         <p className="py-2 text-sm text-muted-foreground">

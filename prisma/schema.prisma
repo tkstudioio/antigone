@@ -56,7 +56,10 @@ model Key {
   id            Int       @id @default(autoincrement()) @map("id")
   productId     Int       @map("product_id")
   sellerPubkey  String    @map("seller_pubkey")
+  // E2E ciphertext of the license code (ECIES envelope `v1:<iv>:<ct>`): the server never holds the
+  // plaintext. The wrapped content keys live in `KeyCodeKey`.
   code          String    @map("code")
+  // Seller-keyed dedup hash (HMAC-SHA256 under a key derived from the seller's private key).
   codeHash      String?   @map("code_hash")
   price         Int       @map("price")
   reservedBy    String?   @map("reserved_by")
@@ -71,6 +74,7 @@ model Key {
   reservedByAcct   Account?  @relation("ReservedKeys", fields: [reservedBy], references: [pubkey])
   buyer            Account?  @relation("BuyerKeys", fields: [buyerPubkey], references: [pubkey])
   order            Order?    @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  codeKeys         KeyCodeKey[]
 
   @@index([productId], name: "idx_key_product_id")
   @@index([sellerPubkey], name: "idx_key_seller_pubkey")
@@ -80,6 +84,26 @@ model Key {
   @@index([reservedBy, reservedUntil], name: "idx_key_reserved_by_until")
   @@index([orderId], name: "idx_key_order_id")
   @@map("key")
+}
+
+/// One wrapped content key (CEK) of a license code per recipient (seller, buyer once delivered,
+/// arbiter once granted). `wrapperPubkey` is the ECDH counterpart the recipient must use to unwrap.
+model KeyCodeKey {
+  id              Int      @id @default(autoincrement()) @map("id")
+  keyId           Int      @map("key_id")
+  recipientPubkey String   @map("recipient_pubkey")
+  wrapperPubkey   String   @map("wrapper_pubkey")
+  wrappedCek      String   @map("wrapped_cek")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  // The signed delivery / arbiter-grant request that created or last changed this wrap (evidence).
+  signedActionId  Int?     @map("signed_action_id")
+
+  key          Key           @relation(fields: [keyId], references: [id], onDelete: Cascade)
+  signedAction SignedAction? @relation(fields: [signedActionId], references: [id], onDelete: SetNull)
+
+  @@unique([keyId, recipientPubkey], name: "uq_key_code_key_recipient")
+  @@index([keyId], name: "idx_key_code_key_key_id")
+  @@map("key_code_key")
 }
 
 model Favorite {
@@ -121,11 +145,18 @@ model Message {
   attachmentName String?  @map("attachment_name")
   attachmentType String?  @map("attachment_type")
   attachmentSize Int?     @map("attachment_size")
+  // The signed `message` / `admin-message` request that created this message (null for system and
+  // legacy messages) and the hash of the previous message's signed action in the chat (the per-chat
+  // hash chain, also part of the signed body). `(chatId, prevHash)` is unique, so the chain is linear.
+  signedActionId Int?     @unique @map("signed_action_id")
+  prevHash       String?  @map("prev_hash")
 
-  chat   Chat         @relation(fields: [chatId], references: [id], onDelete: Cascade)
-  sender Account?     @relation(fields: [senderPubkey], references: [pubkey])
-  keys   MessageKey[]
+  chat         Chat          @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  sender       Account?      @relation(fields: [senderPubkey], references: [pubkey])
+  keys         MessageKey[]
+  signedAction SignedAction? @relation(fields: [signedActionId], references: [id], onDelete: SetNull)
 
+  @@unique([chatId, prevHash], name: "uq_message_chat_prev_hash")
   @@index([chatId], name: "idx_message_chat_id")
   @@map("message")
 }
@@ -201,13 +232,24 @@ model Order {
   createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
   completedAt       DateTime? @map("completed_at") @db.Timestamp(6)
   concludedAt       DateTime? @map("concluded_at") @db.Timestamp(6)
+  // Signed requests that created / last changed the order (evidence the clients verify): the buyer's
+  // checkout (the signed terms), the seller's confirmation or delivery, the dispute opening and the
+  // arbiter's latest verdict.
+  checkoutActionId  Int?      @map("checkout_action_id")
+  confirmActionId   Int?      @map("confirm_action_id")
+  disputeActionId   Int?      @map("dispute_action_id")
+  verdictActionId   Int?      @map("verdict_action_id")
 
-  buyer   Account  @relation("OrderBuyer", fields: [buyerPubkey], references: [pubkey])
-  seller  Account  @relation("OrderSeller", fields: [sellerPubkey], references: [pubkey])
-  arbiter Account? @relation("OrderArbiter", fields: [arbiterPubkey], references: [pubkey])
-  keys    Key[]
-  chat    Chat?
-  escrow  Escrow?  @relation(fields: [escrowAddress], references: [address])
+  buyer          Account       @relation("OrderBuyer", fields: [buyerPubkey], references: [pubkey])
+  seller         Account       @relation("OrderSeller", fields: [sellerPubkey], references: [pubkey])
+  arbiter        Account?      @relation("OrderArbiter", fields: [arbiterPubkey], references: [pubkey])
+  keys           Key[]
+  chat           Chat?
+  escrow         Escrow?       @relation(fields: [escrowAddress], references: [address])
+  checkoutAction SignedAction? @relation("OrderCheckoutAction", fields: [checkoutActionId], references: [id], onDelete: SetNull)
+  confirmAction  SignedAction? @relation("OrderConfirmAction", fields: [confirmActionId], references: [id], onDelete: SetNull)
+  disputeAction  SignedAction? @relation("OrderDisputeAction", fields: [disputeActionId], references: [id], onDelete: SetNull)
+  verdictAction  SignedAction? @relation("OrderVerdictAction", fields: [verdictActionId], references: [id], onDelete: SetNull)
 
   @@index([buyerPubkey], name: "idx_order_buyer_pubkey")
   @@index([sellerPubkey], name: "idx_order_seller_pubkey")
@@ -232,4 +274,31 @@ model Review {
   @@unique([escrowAddress, reviewerPubkey], name: "idx_review_escrow_reviewer")
   @@index([reviewedPubkey], name: "idx_review_reviewed_pubkey")
   @@map("review")
+}
+
+// One row per verified signed mutation request. Persisted as evidence of what each user signed
+// and as the cross-instance anti-replay store (the unique nonce). Deliberately has no FK to
+// `account`: a registration is signed before the account exists.
+model SignedAction {
+  id         Int      @id @default(autoincrement()) @map("id")
+  pubkey     String   @map("pubkey")
+  method     String   @map("method")
+  path       String   @map("path")
+  ts         BigInt   @map("ts")
+  nonce      String   @unique @map("nonce")
+  bodySha256 String   @map("body_sha256")
+  body       String?  @map("body")
+  signature  String   @map("signature")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+
+  // Domain rows that reference this action as their evidence (see the FK columns on each model).
+  message         Message?
+  keyCodeKeys     KeyCodeKey[]
+  checkoutOrders  Order[]      @relation("OrderCheckoutAction")
+  confirmOrders   Order[]      @relation("OrderConfirmAction")
+  disputeOrders   Order[]      @relation("OrderDisputeAction")
+  verdictOrders   Order[]      @relation("OrderVerdictAction")
+
+  @@index([pubkey], name: "idx_signed_action_pubkey")
+  @@map("signed_action")
 }

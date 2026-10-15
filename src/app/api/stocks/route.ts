@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSessionRoute } from "@/lib/auth/session";
-import { verifySignedJsonBody } from "@/lib/auth/verify-signed-json-body";
+import { signedRoute } from "@/lib/auth/signed-route";
 import { createStockSchema, updateStockPriceSchema, deleteStockSchema } from "@/validators";
 import { queryStockProducts } from "@/lib/backend/query-stocks";
 import { upsertStockKeys, updateStockPrice, deleteStock } from "@/lib/backend/mutations-stocks";
@@ -31,103 +31,70 @@ export async function GET(req: NextRequest) {
   return Response.json(result);
 }
 
-export async function POST(req: NextRequest) {
-  const auth = await requireSessionRoute();
-  if (!auth.ok) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+export const POST = signedRoute({
+  schema: createStockSchema,
+  signer: "session",
+  handler: async ({ payload, pubkey: sellerPubkey }) => {
+    const { productId, price, codes } = payload;
 
-  const sellerPubkey = auth.session.user.pubkey;
+    const productRow = await db.product.findUnique({
+      where: { id: productId },
+      select: { id: true, slug: true },
+    });
 
-  let parsed: Awaited<ReturnType<typeof verifySignedJsonBody<typeof createStockSchema>>>;
-  try {
-    parsed = await verifySignedJsonBody(req, sellerPubkey, createStockSchema);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Invalid signature";
-    const status = message.includes("Invalid signature") ? 400 : 422;
-    return Response.json({ error: message }, { status });
-  }
+    if (!productRow) {
+      return Response.json({ error: "Product not found" }, { status: 404 });
+    }
 
-  const { productId, price, codes } = parsed;
+    if (codes.length > 1000) {
+      return Response.json({ error: "Maximum 1000 keys per request" }, { status: 422 });
+    }
 
-  const productRow = await db.product.findUnique({
-    where: { id: productId },
-    select: { id: true, slug: true },
-  });
+    if (codes.length === 0) {
+      return Response.json({ error: "Enter at least one key" }, { status: 422 });
+    }
 
-  if (!productRow) {
-    return Response.json({ error: "Product not found" }, { status: 404 });
-  }
+    // The codes arrive already E2E-encrypted (trimmed and hashed in the seller's browser): the signed
+    // body persisted in `SignedAction` therefore holds ciphertext only.
+    const result = await upsertStockKeys({ sellerPubkey, productId, price, codes });
 
-  if (codes.length > 1000) {
-    return Response.json({ error: "Maximum 1000 keys per request" }, { status: 422 });
-  }
+    return Response.json({
+      inserted: result.inserted,
+      skipped: result.skipped,
+      isNew: result.isNew,
+      productSlug: productRow.slug,
+    });
+  },
+});
 
-  const trimmedCodes = codes.map((c) => c.trim()).filter((c) => c.length > 0);
+export const PATCH = signedRoute({
+  schema: updateStockPriceSchema,
+  signer: "session",
+  handler: async ({ payload, pubkey: sellerPubkey }) => {
+    const { productId, oldPrice, newPrice } = payload;
 
-  if (trimmedCodes.length === 0) {
-    return Response.json({ error: "Enter at least one key" }, { status: 422 });
-  }
+    const result = await updateStockPrice({ sellerPubkey, productId, oldPrice, newPrice });
 
-  const result = await upsertStockKeys({ sellerPubkey, productId, price, codes: trimmedCodes });
+    if (result.updated === 0) {
+      return Response.json({ error: "Stock not found" }, { status: 404 });
+    }
 
-  return Response.json({
-    inserted: result.inserted,
-    skipped: result.skipped,
-    isNew: result.isNew,
-    productSlug: productRow.slug,
-  });
-}
+    return Response.json({ updated: result.updated, newPrice, merged: result.merged });
+  },
+});
 
-export async function PATCH(req: NextRequest) {
-  const auth = await requireSessionRoute();
-  if (!auth.ok) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+export const DELETE = signedRoute({
+  schema: deleteStockSchema,
+  signer: "session",
+  handler: async ({ payload, pubkey: sellerPubkey }) => {
+    const { productId, price } = payload;
 
-  const sellerPubkey = auth.session.user.pubkey;
+    const result = await deleteStock({ sellerPubkey, productId, price });
 
-  let parsed: Awaited<ReturnType<typeof verifySignedJsonBody<typeof updateStockPriceSchema>>>;
-  try {
-    parsed = await verifySignedJsonBody(req, sellerPubkey, updateStockPriceSchema);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Invalid signature";
-    const status = message.includes("Invalid signature") ? 400 : 422;
-    return Response.json({ error: message }, { status });
-  }
+    if (result.deleted === 0) {
+      return Response.json({ error: "No deletable keys (all in escrow)" }, { status: 409 });
+    }
 
-  const { productId, oldPrice, newPrice } = parsed;
-
-  const result = await updateStockPrice({ sellerPubkey, productId, oldPrice, newPrice });
-
-  if (result.updated === 0) {
-    return Response.json({ error: "Stock not found" }, { status: 404 });
-  }
-
-  return Response.json({ updated: result.updated, newPrice, merged: result.merged });
-}
-
-export async function DELETE(req: NextRequest) {
-  const auth = await requireSessionRoute();
-  if (!auth.ok) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const sellerPubkey = auth.session.user.pubkey;
-
-  let parsed: Awaited<ReturnType<typeof verifySignedJsonBody<typeof deleteStockSchema>>>;
-  try {
-    parsed = await verifySignedJsonBody(req, sellerPubkey, deleteStockSchema);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Invalid signature";
-    const status = message.includes("Invalid signature") ? 400 : 422;
-    return Response.json({ error: message }, { status });
-  }
-
-  const { productId, price } = parsed;
-
-  const result = await deleteStock({ sellerPubkey, productId, price });
-
-  if (result.deleted === 0) {
-    return Response.json(
-      { error: "No deletable keys (all in escrow)" },
-      { status: 409 }
-    );
-  }
-
-  return Response.json({ deleted: result.deleted });
-}
+    return Response.json({ deleted: result.deleted });
+  },
+});

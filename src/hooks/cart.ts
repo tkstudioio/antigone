@@ -6,6 +6,9 @@ import { backend } from "@/lib/backend";
 import { postSigned, requestSigned } from "@/lib/auth/signed-request";
 import useProfileStore from "@/stores/profile";
 import { deriveEscrowAddress } from "@/lib/ark/escrow";
+import { getOperatorSignerPubkey } from "@/lib/ark/operator-signer";
+import { checkArbiter } from "@/lib/arbiter-pin";
+import { samePubkey } from "@/lib/auth/verify-signed-action";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -38,6 +41,7 @@ export type EscrowDescriptor = {
   serverPubkey: string;
   exitDelay: number;
   price: number;
+  platformFee: number;
   /** Per-order commitment nonce (64-char hex) used to derive the unique escrow address. */
   nonce: string;
 };
@@ -47,14 +51,23 @@ export type CheckoutOrder = {
   sellerPubkey: string;
   sellerUsername: string;
   totalSats: number;
+  platformFee: number;
   status: string;
   keyIds: number[];
   escrow: EscrowDescriptor;
 };
 
+/** One line of the terms the buyer signs at checkout: what the cart showed and the buyer accepted. */
+export type CheckoutItemInput = { keyId: number; sellerPubkey: string; price: number };
+
+/** An order whose escrow names an arbiter other than the one this browser pinned (TOFU). */
+export type ArbiterChange = { orderId: number; pinned: string; seen: string };
+
 export type CheckoutResult = {
   orders: CheckoutOrder[];
   unavailableKeys: Array<{ keyId: number; reason: string }>;
+  /** Non-empty → payment on these orders stays blocked until the user acknowledges the change. */
+  arbiterChanges: ArbiterChange[];
 };
 
 // ─── Hooks ───────────────────────────────────────────────────────────────────
@@ -155,24 +168,57 @@ export function usePayEscrows() {
   });
 }
 
+/**
+ * Checkout. The payload is the buyer-signed TERMS: every key with the seller and price the cart
+ * showed. The server answers 409 when any of them changed meanwhile (the cart is then refetched so
+ * the user re-confirms the new price). The response is verified before any funds can be sent:
+ * the orders must match what was signed (keys, seller, totals), every escrow address is re-derived
+ * locally, the operator key must equal the one the operator itself reports (`getInfo()` in the
+ * browser) and the arbiter is checked against the TOFU pin.
+ */
 export function useCheckout() {
   const queryClient = useQueryClient();
   const account = useProfileStore((s) => s.account);
 
   return useMutation({
-    mutationFn: async (payload: { keyIds: number[] }): Promise<CheckoutResult> => {
+    mutationFn: async (payload: { items: CheckoutItemInput[] }): Promise<CheckoutResult> => {
       if (!account) throw new Error("Wallet unavailable");
-      const result = await postSigned<CheckoutResult>(
+      const raw = await postSigned<Omit<CheckoutResult, "arbiterChanges">>(
         "/cart/checkout",
-        payload,
+        { items: payload.items },
         account.privateKey
       );
 
-      // Re-derive each escrow address from the server-provided descriptor and
-      // verify it matches before any funds are sent. The timelock and nonce come
-      // from the server so the derivation is deterministic.
+      const signedTerms = new Map(payload.items.map((i) => [i.keyId, i]));
+      const operatorPubkey = await getOperatorSignerPubkey();
+
+      // Verify everything first; only then pin an arbiter, so a forged response cannot plant one.
       const buyerPubkey = account.pubkey;
-      for (const order of result.orders) {
+      for (const order of raw.orders) {
+        const abort = (reason: string): never => {
+          throw new Error(`Escrow verification failed for order #${order.id}: ${reason}`);
+        };
+
+        // The order must be exactly what the buyer signed: same keys, same seller, same prices.
+        let signedTotal = 0;
+        for (const keyId of order.keyIds) {
+          const signed = signedTerms.get(keyId);
+          if (!signed) abort("it contains a key you did not select");
+          if (!samePubkey(signed!.sellerPubkey, order.sellerPubkey)) {
+            abort("a key belongs to a different seller than the one you accepted");
+          }
+          signedTotal += signed!.price;
+        }
+        if (signedTotal !== order.totalSats) abort("the total differs from the signed prices");
+        if (!samePubkey(order.escrow.sellerPubkey, order.sellerPubkey)) {
+          abort("the escrow seller differs from the order seller");
+        }
+        if (order.escrow.price !== order.totalSats + order.platformFee) {
+          abort("the escrow amount differs from the total plus the platform fee");
+        }
+
+        // Re-derive the escrow address from the descriptor and verify it matches before any funds
+        // are sent. The timelock and nonce come from the server so the derivation is deterministic.
         const recomputed = deriveEscrowAddress({
           buyerPubkey,
           sellerPubkey: order.escrow.sellerPubkey,
@@ -181,18 +227,36 @@ export function useCheckout() {
           exitDelay: order.escrow.exitDelay,
           scriptNonce: order.escrow.nonce,
         });
-        if (recomputed !== order.escrow.address) {
+        if (recomputed !== order.escrow.address) abort("the address does not match");
+
+        // The operator key comes from the operator itself, never from our API.
+        if (!operatorPubkey) {
           throw new Error(
-            `Escrow verification failed for order #${order.id}: the address does not match`
+            `Order #${order.id} was created but cannot be verified: the Arkade operator is unreachable. Nothing was paid; open the order and pay once the operator is available.`
           );
+        }
+        if (!samePubkey(operatorPubkey, order.escrow.serverPubkey)) {
+          abort("the operator key does not match the Arkade operator");
         }
       }
 
-      return result;
+      const arbiterChanges: ArbiterChange[] = [];
+      for (const order of raw.orders) {
+        const check = checkArbiter(order.escrow.arbiterPubkey);
+        if (check.status === "mismatch") {
+          arbiterChanges.push({ orderId: order.id, pinned: check.pinned, seen: check.seen });
+        }
+      }
+
+      return { ...raw, arbiterChanges };
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["cart"] });
       void queryClient.invalidateQueries({ queryKey: ["stocks"] });
+    },
+    onError: () => {
+      // A 409 (price/seller drift) or an unavailable key: refresh the cart so the user re-confirms.
+      void queryClient.invalidateQueries({ queryKey: ["cart"] });
     },
   });
 }

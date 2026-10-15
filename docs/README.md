@@ -30,7 +30,7 @@ This is the path most of the system serves, end to end. Each step links to where
 5. The **seller confirms** the order, which hands the buyer ownership of the keys, then buyer + seller
    - operator **collaboratively release** the funds to the seller. → [escrow/release.md](./escrow/release.md)
 6. If something goes wrong, either side **opens a dispute**; the **admin rules** a verdict and the
-   favoured party **settles** the escrow on Ark. → [escrow/dispute.md](./escrow/dispute.md) ·
+   favoured party **settles** the escrow on Ark (the admin co-signs in their own browser). → [escrow/dispute.md](./escrow/dispute.md) ·
    [admin.md](./admin.md)
 
 The order and its escrow advance in parallel through this journey — the **state machine that ties them
@@ -97,21 +97,24 @@ The docs are organized in **3 levels**; each level adds detail and **does not re
 
 ### Cross-cutting (shared protocol, not tied to a single domain)
 
-| Area             | L2                             | L3                                                                                                                                                                    |
-| ---------------- | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Arkade-OS escrow | [escrow.md](./escrow.md)       | [escrow/contract.md](./escrow/contract.md) · [escrow/release.md](./escrow/release.md) · [escrow/dispute.md](./escrow/dispute.md) · [escrow/fees.md](./escrow/fees.md) |
-| Cryptography     | [crypto.md](./crypto.md)       | [crypto/signing.md](./crypto/signing.md) · [crypto/messaging.md](./crypto/messaging.md) · [crypto/at-rest.md](./crypto/at-rest.md)                                    |
-| Data layer       | [data.md](./data.md)           | —                                                                                                                                                                     |
-| Order lifecycle  | [lifecycle.md](./lifecycle.md) | —                                                                                                                                                                     |
-| Glossary         | [glossary.md](./glossary.md)   | —                                                                                                                                                                     |
+| Area             | L2                             | L3                                                                                                                                                                                      |
+| ---------------- | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Arkade-OS escrow | [escrow.md](./escrow.md)       | [escrow/contract.md](./escrow/contract.md) · [escrow/release.md](./escrow/release.md) · [escrow/dispute.md](./escrow/dispute.md) · [escrow/fees.md](./escrow/fees.md)                   |
+| Cryptography     | [crypto.md](./crypto.md)       | [crypto/signing.md](./crypto/signing.md) · [crypto/messaging.md](./crypto/messaging.md) · [crypto/at-rest.md](./crypto/at-rest.md) · [crypto/verification.md](./crypto/verification.md) |
+| Data layer       | [data.md](./data.md)           | —                                                                                                                                                                                       |
+| Order lifecycle  | [lifecycle.md](./lifecycle.md) | —                                                                                                                                                                                       |
+| Glossary         | [glossary.md](./glossary.md)   | —                                                                                                                                                                                       |
 
 ## Cross-cutting conventions
 
 - **API auth**: protected routes use `requireSessionRoute()`; admin-only routes use
   `requireAdminRoute()` or a manual `session.user.isAdmin` check. → [crypto/signing.md](./crypto/signing.md).
 - **Signed mutations**: every POST/PATCH/DELETE is signed by the client (`postSigned`) and verified by
-  the server (`verifySignedJsonBody`); the envelope covers method + path + timestamp + nonce + payload.
+  the server (`signedRoute`, gated by `src/proxy.ts`); the envelope covers method + path (+ query) + timestamp + nonce + the SHA-256 of the body, and every verified request is persisted as a `SignedAction`.
   → [crypto/signing.md](./crypto/signing.md).
+- **Verified reads**: the browser does not trust the server for what a user signed or what Ark can
+  attest — records are verified against their author's signature and Ark facts are read from the indexer.
+  → [crypto/verification.md](./crypto/verification.md).
 - **Validation**: Zod schemas shared between client and server in `src/validators/index.ts`.
 - **Prices**: in satoshi (integers). Always use `formatPrice()` from `src/lib/utils.ts`.
 - **UI strings**: English only.

@@ -1,17 +1,24 @@
 import "server-only";
 
 import { db } from "@/db";
-import { encryptCode, hashCode } from "@/lib/crypto/symmetric";
+
+/** A license code already encrypted in the seller's browser (the server never sees plaintext). */
+export type EncryptedStockCode = {
+  ciphertext: string;
+  wrappedCek: string;
+  codeHash: string;
+};
 
 export async function upsertStockKeys(params: {
   sellerPubkey: string;
   productId: number;
   price: number;
-  codes: string[];
+  codes: EncryptedStockCode[];
 }): Promise<{ inserted: number; skipped: number; isNew: boolean }> {
   const { sellerPubkey, productId, price, codes } = params;
 
-  const uniqueCodes = [...new Set(codes)];
+  // Drop duplicates inside the request itself (same client-side dedup hash).
+  const uniqueCodes = [...new Map(codes.map((c) => [c.codeHash, c])).values()];
 
   // Check whether any row exists for this tier before inserting
   const existingTierRow = await db.key.findFirst({
@@ -27,7 +34,7 @@ export async function upsertStockKeys(params: {
   const isNew = existingTierRow === null;
 
   // Find codes that already exist for this (seller, product) regardless of price/state.
-  // Compare on code_hash because ciphertext is non-deterministic (random IV).
+  // Compare on the client-computed code_hash because ciphertext is non-deterministic (random IV).
   const existingHashes = await db.key.findMany({
     where: { sellerPubkey, productId },
     select: { codeHash: true },
@@ -35,18 +42,32 @@ export async function upsertStockKeys(params: {
 
   const existingHashSet = new Set(existingHashes.map((r) => r.codeHash));
 
-  const newCodes = uniqueCodes.filter((c) => !existingHashSet.has(hashCode(c)));
+  const newCodes = uniqueCodes.filter((c) => !existingHashSet.has(c.codeHash));
   const skipped = uniqueCodes.length - newCodes.length;
 
   if (newCodes.length > 0) {
-    await db.key.createMany({
-      data: newCodes.map((code) => ({
-        sellerPubkey,
-        productId,
-        price,
-        code: encryptCode(code),
-        codeHash: hashCode(code),
-      })),
+    // One key row + the seller's own wrapped content key per code. The seller wraps the CEK
+    // toward itself (wrapper = recipient = seller).
+    await db.$transaction(async (tx) => {
+      const created = await tx.key.createManyAndReturn({
+        data: newCodes.map((c) => ({
+          sellerPubkey,
+          productId,
+          price,
+          code: c.ciphertext,
+          codeHash: c.codeHash,
+        })),
+        select: { id: true, codeHash: true },
+      });
+      const wrapByHash = new Map(newCodes.map((c) => [c.codeHash, c.wrappedCek]));
+      await tx.keyCodeKey.createMany({
+        data: created.map((k) => ({
+          keyId: k.id,
+          recipientPubkey: sellerPubkey,
+          wrapperPubkey: sellerPubkey,
+          wrappedCek: wrapByHash.get(k.codeHash!)!,
+        })),
+      });
     });
   }
 

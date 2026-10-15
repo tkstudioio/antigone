@@ -1,37 +1,29 @@
-import { NextRequest, NextResponse } from "next/server";
-import { requireSessionRoute } from "@/lib/auth/session";
-import { verifySignedJsonBody } from "@/lib/auth/verify-signed-json-body";
+import { signedRoute } from "@/lib/auth/signed-route";
 import { confirmOrder } from "@/lib/backend/mutations-orders";
 import { confirmOrderSchema } from "@/validators";
 
-export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireSessionRoute();
-  if (!auth.ok) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+// Seller confirmation = delivery: the body carries one content-key wrap toward the buyer for every
+// key of the order (ciphertext only — the signed body persisted in `SignedAction` is the evidence).
+export const POST = signedRoute({
+  schema: confirmOrderSchema,
+  signer: "session",
+  handler: async ({ payload, pubkey, params, action }) => {
+    const orderId = parseInt(params.id, 10);
+    if (isNaN(orderId)) {
+      return Response.json({ error: "Invalid order ID" }, { status: 400 });
+    }
 
-  const { id } = await params;
-  const orderId = parseInt(id, 10);
-  if (isNaN(orderId)) {
-    return Response.json({ error: "Invalid order ID" }, { status: 400 });
-  }
+    const result = await confirmOrder({
+      sellerPubkey: pubkey,
+      orderId,
+      keys: payload.keys,
+      actionId: action.id,
+    });
 
-  const pubkey = auth.session.user.pubkey;
+    if ("error" in result) {
+      return Response.json({ error: result.error }, { status: result.status });
+    }
 
-  let parsed: Awaited<ReturnType<typeof verifySignedJsonBody<typeof confirmOrderSchema>>>;
-  try {
-    parsed = await verifySignedJsonBody(req, pubkey, confirmOrderSchema);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Invalid signature";
-    const status = message.includes("Invalid signature") ? 401 : 422;
-    return Response.json({ error: message }, { status });
-  }
-
-  void parsed;
-
-  const result = await confirmOrder({ sellerPubkey: pubkey, orderId });
-
-  if ("error" in result) {
-    return Response.json({ error: result.error }, { status: result.status });
-  }
-
-  return Response.json({ ok: true });
-}
+    return Response.json({ ok: true });
+  },
+});

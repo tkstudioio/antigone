@@ -4,17 +4,18 @@ import type { EscrowStatus } from "@/db/enums";
 export type { EscrowStatus };
 
 export const ESCROW_STATUS_LABELS: Record<EscrowStatus, string> = {
-  awaitingFunds: "In attesa di pagamento",
-  partiallyFunded: "Parzialmente finanziato",
-  fundLocked: "Fondi bloccati",
-  sellerReady: "Rilascio preparato",
-  buyerSubmitted: "Inviato dall'acquirente",
-  buyerCheckpointsSigned: "Acquirente ha collaborato",
-  completed: "Rilasciato",
-  disputed: "In disputa",
-  settling: "Liquidazione in corso",
-  refunded: "Rimborsato",
-  expiredSwept: "Fondi scaduti (recuperati dall'operatore)",
+  awaitingFunds: "Awaiting payment",
+  partiallyFunded: "Partially funded",
+  fundLocked: "Funds locked",
+  sellerReady: "Release prepared",
+  buyerSubmitted: "Submitted by the buyer",
+  buyerCheckpointsSigned: "Buyer collaborated",
+  completed: "Released",
+  disputed: "In dispute",
+  settlementPrepared: "Settlement awaiting arbiter",
+  settling: "Settling",
+  refunded: "Refunded",
+  expiredSwept: "Funds expired (swept by the operator)",
 };
 
 /**
@@ -47,6 +48,7 @@ export const ESCROW_STATUS_BADGE: Record<EscrowStatus, BadgeStyle> = {
   buyerCheckpointsSigned: { action: "primary", variant: "outline" },
   completed: { action: "positive", variant: "solid" },
   disputed: { action: "negative", variant: "solid" },
+  settlementPrepared: { action: "primary", variant: "outline" },
   settling: { action: "primary", variant: "outline" },
   refunded: { action: "muted", variant: "solid" },
   expiredSwept: { action: "negative", variant: "solid" },

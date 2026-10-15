@@ -1,72 +1,72 @@
-import { NextRequest, NextResponse } from "next/server";
-import { requireSessionRoute } from "@/lib/auth/session";
-import { verifySignedJsonBody } from "@/lib/auth/verify-signed-json-body";
+import { NextResponse } from "next/server";
+import { signedRoute } from "@/lib/auth/signed-route";
 import { checkoutSchema } from "@/validators";
 import { processCheckout } from "@/lib/backend/mutations-checkout";
 import { getArkOperatorConfig } from "@/lib/ark/operator";
 import { db } from "@/db";
-import { derivePubkey, mnemonicToPrivateKey } from "@/lib/utils";
+import { getAdminPubkey } from "@/lib/backend/admin-key";
 
-export async function POST(req: NextRequest) {
-  const auth = await requireSessionRoute();
-  if (!auth.ok) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+export const POST = signedRoute({
+  schema: checkoutSchema,
+  signer: "session",
+  handler: async ({ payload, pubkey: buyerPubkey, action }) => {
+    // Resolve escrow inputs before the DB transaction (getInfo is a network call).
+    const adminPubkey = getAdminPubkey();
+    if (!adminPubkey) {
+      return Response.json(
+        { error: "Missing escrow configuration: ADMIN_PUBKEY not set or invalid" },
+        { status: 500 }
+      );
+    }
 
-  const buyerPubkey = auth.session.user.pubkey;
+    let operatorConfig;
+    try {
+      operatorConfig = await getArkOperatorConfig();
+    } catch (err) {
+      // The ASP (Arkade server) is unreachable: without its config we cannot
+      // derive the escrows. Handled error (503) instead of an opaque 500.
+      console.error("getArkOperatorConfig failed (ASP unreachable?):", err);
+      return Response.json(
+        { error: "Arkade service unavailable, please try again later." },
+        { status: 503 }
+      );
+    }
+    const { serverPubkey, hrp, unilateralExitDelay, dust } = operatorConfig;
 
-  const parsed = await verifySignedJsonBody(req, buyerPubkey, checkoutSchema);
+    // Escrow.arbiterPubkey is a FK to Account: ensure the admin account exists.
+    await db.account.upsert({
+      where: { pubkey: adminPubkey },
+      create: { pubkey: adminPubkey, username: "admin" },
+      update: {},
+    });
 
-  // Resolve escrow inputs before the DB transaction (getInfo is a network call).
-  if (!process.env.ADMIN_MNEMONIC) {
-    return Response.json(
-      { error: "Missing escrow configuration: ADMIN_MNEMONIC not set" },
-      { status: 500 }
-    );
-  }
+    // CSV exit-path delay is a relative timelock (seconds/blocks); fits in a JS number.
+    const exitDelay = Number(unilateralExitDelay);
 
-  let operatorConfig;
-  try {
-    operatorConfig = await getArkOperatorConfig();
-  } catch (err) {
-    // The ASP (Arkade server) is unreachable: without its config we cannot
-    // derive the escrows. Handled error (503) instead of an opaque 500.
-    console.error("getArkOperatorConfig failed (ASP unreachable?):", err);
-    return Response.json(
-      { error: "Arkade service unavailable, please try again later." },
-      { status: 503 }
-    );
-  }
-  const { serverPubkey, hrp, unilateralExitDelay, dust } = operatorConfig;
-  const adminPubkey = derivePubkey(
-    mnemonicToPrivateKey(process.env.ADMIN_MNEMONIC, process.env.ADMIN_PASSPHRASE)
-  );
+    // The payload carries the terms the buyer saw (key, seller, price per item); a drift answers 409.
+    const result = await processCheckout(buyerPubkey, payload.items, {
+      serverPubkey,
+      hrp,
+      adminPubkey,
+      exitDelay,
+      dustLimit: Number(dust),
+      signature: action.signature,
+      actionId: action.id,
+    });
 
-  // Escrow.arbiterPubkey is a FK to Account: ensure the admin account exists.
-  await db.account.upsert({
-    where: { pubkey: adminPubkey },
-    create: { pubkey: adminPubkey, username: "admin" },
-    update: {},
-  });
+    if ("error" in result) {
+      return Response.json({ error: result.error }, { status: result.status });
+    }
 
-  // CSV exit-path delay is a relative timelock (seconds/blocks); fits in a JS number.
-  const exitDelay = Number(unilateralExitDelay);
+    if (result.orders.length === 0) {
+      return Response.json(
+        {
+          error: "Error",
+        },
+        { status: 409 }
+      );
+    }
 
-  const result = await processCheckout(buyerPubkey, parsed.keyIds, {
-    serverPubkey,
-    hrp,
-    adminPubkey,
-    exitDelay,
-    dustLimit: Number(dust),
-    signature: parsed.signature,
-  });
-
-  if (result.orders.length === 0) {
-    return Response.json(
-      {
-        error: "Error",
-      },
-      { status: 409 }
-    );
-  }
-
-  return NextResponse.json({ orders: result.orders });
-}
+    return NextResponse.json({ orders: result.orders });
+  },
+});

@@ -62,7 +62,7 @@ export type EscrowParams = {
   buyerPubkey: string;
   /** 33-byte compressed hex */
   sellerPubkey: string;
-  /** Platform admin / arbiter — 33-byte compressed hex (ADMIN_MNEMONIC derived) */
+  /** Platform admin / arbiter — 33-byte compressed hex (`ADMIN_PUBKEY`) */
   adminPubkey: string;
   /** Arkade operator — 33-byte compressed hex (getInfo().signerPubkey) */
   serverPubkey: string;

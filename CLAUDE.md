@@ -20,7 +20,7 @@ The app is organized into **domains**, where a domain is a route group under `sr
 - **`(account)`** — authenticated user area: cart/reservation, orders, seller stock, Arkade wallet (under `(account)/dashboard`), order chat.
 - **`(admin)`** — platform moderation: disputes and chat, gated on `session.user.isAdmin`.
 
-The typical request path is: thin server-component **page** → client **table/component** (`src/components/`) → **hook** (`src/hooks/`) using the `backend` axios client → **API route** (`src/app/api/`) → **backend module** (`src/lib/backend/query-*.ts` for reads, `mutations-*.ts` for writes) → Prisma (`src/db/`). Mutations are signed (`postSigned` / `verifySignedJsonBody`); reads and writes share Zod schemas in `src/validators/`.
+The typical request path is: thin server-component **page** → client **table/component** (`src/components/`) → **hook** (`src/hooks/`) using the `backend` axios client → **API route** (`src/app/api/`) → **backend module** (`src/lib/backend/query-*.ts` for reads, `mutations-*.ts` for writes) → Prisma (`src/db/`). Mutations are signed (`postSigned` → `signedRoute`); reads and writes share Zod schemas in `src/validators/`.
 
 ## Documentation
 
@@ -36,7 +36,7 @@ Domains:
 Cross-cutting (shared protocol):
 
 - @docs/escrow.md — Arkade-OS escrow contract, release, dispute settlement, fees
-- @docs/crypto.md — request signing, E2E messaging, at-rest encryption
+- @docs/crypto.md — request signing, E2E messaging, at-rest encryption, client-side verification of server data
 - @docs/data.md — Prisma entities/relations, enums, adapter, migrations
 - @docs/lifecycle.md — order + escrow state machine (single source of truth)
 - @docs/glossary.md — domain vocabulary (escrow, VTXO, 13th word, …); start here when onboarding
@@ -55,6 +55,7 @@ yarn db:migrate       # Prisma: apply pending migrations (prisma migrate deploy)
 yarn db:migrate:dev   # Prisma: create + apply new migration in development
 yarn db:seed          # tsx src/db/seed.ts — sample products
 yarn db:anti-seed     # tsx src/db/anti-seed.ts — tear down dev data
+yarn derive:pubkey    # local only: DERIVE_MNEMONIC/DERIVE_PASSPHRASE env → ADMIN_PUBKEY
 ```
 
 Node `v22.22.2` (`.nvmrc`). Package manager: yarn.
@@ -63,11 +64,15 @@ Node `v22.22.2` (`.nvmrc`). Package manager: yarn.
 
 ### Auth & signed mutations
 
-Passwordless Schnorr (secp256k1) challenge–response; client-side key derivation (mnemonic + passphrase, BIP84 `m/84'/0'/0'/0/0`) never leaves the browser. NextAuth `jwt` session (24h). Authenticated mutations are signed (`postSigned` → `verifySignedJsonBody`), with a canonical envelope binding method+path+timestamp+nonce+payload (120s window, single-use nonces, in-memory). → flows in `docs/auth/flows.md`, key/vault in `docs/auth/keys-vault.md`, signing in `docs/crypto/signing.md`.
+Passwordless Schnorr (secp256k1) challenge–response; client-side key derivation (mnemonic + passphrase, BIP84 `m/84'/0'/0'/0/0`) never leaves the browser. NextAuth `jwt` session (24h). Every data-mutating API call is signed (`postSigned` / `uploadSigned` → `signedRoute`): the client signs a v2 envelope binding method + path (with query) + timestamp + nonce + SHA-256 of the raw body (120s window) and sends it in `x-antigone-signature` / `-timestamp` / `-nonce` headers, body untouched. `src/proxy.ts` rejects unsigned mutations fail-closed (allowlist: `/api/auth/challenge` + NextAuth internals); `signedRoute` verifies and persists every request as a `SignedAction` row, whose unique nonce is the (Postgres) anti-replay store. → flows in `docs/auth/flows.md`, key/vault in `docs/auth/keys-vault.md`, signing in `docs/crypto/signing.md`.
+
+### Client-side verification (the browser does not trust the server)
+
+Domain rows link to the `SignedAction` behind them (`Message`, `Order` checkout/confirm/dispute/verdict, `KeyCodeKey`) and the API returns those actions; the browser re-verifies them (`src/lib/auth/verify-signed-action.ts`: expected author + method + path, body hash, Schnorr) and renders from the **signed body**. Chat messages form a per-chat hash chain (`prevHash` in the signed body, 409 on a stale tail); the checkout payload is the buyer-signed terms (`items`, 409 on price/seller drift); the arbiter's verdict is verified against the **pinned** arbiter (TOFU, `src/lib/arbiter-pin.ts`) and the settlement is built from it. Escrow funding comes from the Ark indexer in the browser and `escrow.serverPubkey` must equal the operator's own `getInfo()`. Any failure disables signing/paying/settling for that order (`order.verification.blocked`). → `docs/crypto/verification.md`.
 
 ### Admin identity
 
-`ADMIN_MNEMONIC` + `ADMIN_PASSPHRASE` (server-only) derive the platform admin pubkey; `ADMIN_PASSPHRASE` **must** equal the passphrase the admin uses in the UI or no one is admin. The same identity is the escrow arbiter and dispute co-signer. Omit/invalid → admin disabled. → `docs/auth.md` (Identità admin).
+`ADMIN_PUBKEY` (server-only env, a **public** key: 33-byte compressed secp256k1, hex) identifies the platform admin: `isAdmin` = session pubkey equals it, and it is the escrow arbiter pubkey at checkout. The server **never holds the admin's mnemonic or private key** — the arbiter co-signs dispute settlements in the admin's own browser. Derive the value locally with `yarn derive:pubkey`. Omit/invalid → admin disabled. → `docs/auth.md` (Admin identity), `docs/escrow/dispute.md`.
 
 ### Route groups
 
@@ -78,7 +83,7 @@ Passwordless Schnorr (secp256k1) challenge–response; client-side key derivatio
 - `(account)` — authenticated user area: `cart`, `orders`, `stocks`, and `dashboard` (Arkade SDK wallet, secp256k1 wallet UI)
 - `(shop)` — product browsing
 
-API routes live under `src/app/api/`: `auth/{challenge,login,register,[...nextauth]}`, plus `admin`, `cart`, `chat`, `chats`, `orders`, `products`, `stocks`, and `images/[...key]` (public proxy for product images only — chat attachments under prefix `chat/` return 404 and are served exclusively via the authenticated `GET /api/chat/[id]/attachment/[messageId]` route).
+API routes live under `src/app/api/`: `auth/{challenge,register,[...nextauth]}`, plus `admin`, `cart`, `chat`, `chats`, `orders`, `products`, `stocks`, and `images/[...key]` (public proxy for product images only — chat attachments under prefix `chat/` return 404 and are served exclusively via the authenticated `GET /api/chat/[id]/attachment/[messageId]` route).
 
 ### Data layer
 
@@ -86,7 +91,7 @@ Prisma Client + `PrismaPg` adapter (singleton `src/db/index.ts`, `DATABASE_URL` 
 
 ### Escrow & crypto
 
-Each order has a **trustless Arkade-OS escrow** (7-leaf taproot; buyer/seller/admin/operator). Checkout creates it, the seller+buyer release it collaboratively on the happy path, and the admin-favoured party settles it on dispute. → `docs/escrow.md`. License-key codes and chat attachments are encrypted at rest (AES-256-GCM); chat text is E2E-encrypted (ECIES, per-recipient `MessageKey`), with admin read access gated on the dispute (`src/lib/backend/dispute-access.ts`). → `docs/crypto.md`.
+Each order has a **trustless Arkade-OS escrow** (7-leaf taproot; buyer/seller/admin/operator). Checkout creates it, the seller+buyer release it collaboratively on the happy path, and on dispute the admin-favoured party prepares the settlement, the arbiter co-signs it in the admin's browser (the server holds no arbiter key), and the favoured party finalizes. → `docs/escrow.md`. License-key codes are E2E-encrypted like chat text (same envelope scheme, per-recipient `KeyCodeKey`: the seller encrypts at upload, re-wraps toward the buyer at confirmation = delivery, and a dispute party re-wraps toward the arbiter), so the server holds no key that can read them; chat attachments are encrypted at rest server-side (AES-256-GCM). Chat text is E2E-encrypted (ECIES, per-recipient `MessageKey`), with admin read access gated on the dispute (`src/lib/backend/dispute-access.ts`). → `docs/crypto.md`.
 
 ### Frontend conventions
 
@@ -114,17 +119,17 @@ UI primitives: shadcn (`style: radix-vega`, base `neutral`, lucide icons) in `sr
 
 ### Validators
 
-Zod schemas in `src/validators/index.ts`. Reused on both client (form validation) and server (`schema.parse(body)` in route handlers). All signed-payload schemas include `signature: z.string().min(1)`.
+Zod schemas in `src/validators/index.ts`. Reused on both client (form validation) and server (parsed by `signedRoute` in route handlers). Signed-payload schemas describe the domain payload only — the signature travels in headers, never in the body.
 
 ## Environment
 
 Required (see `.env.example` + `.env.local`):
 
 - `NEXTAUTH_URL`, `NEXTAUTH_SECRET` — auth-options throws at import time if `NEXTAUTH_SECRET` missing.
-- `ADMIN_MNEMONIC`, `ADMIN_PASSPHRASE` — server-only; derive the platform admin pubkey. `ADMIN_PASSPHRASE` must equal the admin's UI passphrase or no one is admin; omit/invalid `ADMIN_MNEMONIC` disables admin. → `docs/auth.md`.
+- `ADMIN_PUBKEY` — server-only, public: the admin's compressed pubkey (hex). The admin must log in with the identity (mnemonic + passphrase) behind it. Never put the admin mnemonic/passphrase on the server; derive the value locally with `yarn derive:pubkey`. Omit/invalid disables admin. → `docs/auth.md`.
 - `NEXT_PUBLIC_ARK_OPERATOR_URL`, `NEXT_PUBLIC_BOLTZ_SWAP_PROVIDER` — Arkade wallet runtime.
 - `DATABASE_URL` — required. Points to the PostgreSQL instance (`docker compose up -d postgres` uses the value in `.env.example`).
-- `ENCRYPTION_KEY` — server-only, 32-byte base64. Encrypts `Key.code` at rest (AES-256-GCM) and derives the HMAC for `code_hash` dedup. Required for any stock upload/read. Protects against DB compromise, not a compromised app server.
+- `ENCRYPTION_KEY` — server-only, 32-byte base64. Encrypts **chat attachments** at rest (AES-256-GCM); license codes do not use it (they are E2E-encrypted in the browser). Protects against DB/storage compromise, not a compromised app server.
 
 - `MINIO_*` / `NEXT_PUBLIC_MINIO_URL` — S3-compatible storage (MinIO) for chat attachments (dispute evidence). Objects are stored encrypted at rest; the app proxies and decrypts chat attachment downloads through `GET /api/chat/[id]/attachment/[messageId]` (no presigned URLs). Storage client lives in `src/lib/storage`.
 

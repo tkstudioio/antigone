@@ -13,6 +13,7 @@ async function deleteAll() {
     products,
     challenges,
     accounts,
+    signedActions,
   ] = await db.$transaction([
     db.message.deleteMany(),
     db.review.deleteMany(),
@@ -24,19 +25,21 @@ async function deleteAll() {
     db.product.deleteMany(),
     db.challenge.deleteMany(),
     db.account.deleteMany(),
+    db.signedAction.deleteMany(),
   ]);
 
   console.log("Deleted:");
-  console.log(`  messages:   ${messages.count}`);
-  console.log(`  reviews:    ${reviews.count}`);
-  console.log(`  orders:     ${orders.count}`);
-  console.log(`  escrows:    ${escrows.count}`);
-  console.log(`  favorites:  ${favorites.count}`);
-  console.log(`  chats:      ${chats.count}`);
-  console.log(`  keys:       ${keys.count}`);
-  console.log(`  products:   ${products.count}`);
-  console.log(`  challenges: ${challenges.count}`);
-  console.log(`  accounts:   ${accounts.count}`);
+  console.log(`  messages:      ${messages.count}`);
+  console.log(`  reviews:       ${reviews.count}`);
+  console.log(`  orders:        ${orders.count}`);
+  console.log(`  escrows:       ${escrows.count}`);
+  console.log(`  favorites:     ${favorites.count}`);
+  console.log(`  chats:         ${chats.count}`);
+  console.log(`  keys:          ${keys.count}`);
+  console.log(`  products:      ${products.count}`);
+  console.log(`  challenges:    ${challenges.count}`);
+  console.log(`  accounts:      ${accounts.count}`);
+  console.log(`  signedActions: ${signedActions.count}`);
 }
 
 deleteAll()

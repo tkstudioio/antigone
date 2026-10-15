@@ -197,7 +197,15 @@ export function StockTierDetail({ tier, productId, productName, productSlug }: P
                           <TableCell className="font-mono text-xs text-muted-foreground">
                             #{k.id}
                           </TableCell>
-                          <TableCell className="font-mono text-sm">{k.code ?? "—"}</TableCell>
+                          <TableCell className="font-mono text-sm">
+                            {k.code != null ? (
+                              k.code
+                            ) : k.codeStatus === "undecryptable" ? (
+                              <span className="font-sans text-destructive">Unable to decrypt</span>
+                            ) : (
+                              "—"
+                            )}
+                          </TableCell>
                           <TableCell className="text-sm text-muted-foreground">
                             {new Date(k.createdAt).toLocaleDateString("en-US")}
                           </TableCell>

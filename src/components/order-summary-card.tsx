@@ -3,13 +3,14 @@
 import { toast } from "react-toastify";
 import { CalendarCheck, CalendarPlus, CopyIcon, Gavel, User } from "lucide-react";
 
-import type { OrderDetail } from "@/lib/backend/query-orders";
+import type { OrderDetailView } from "@/hooks/orders";
+import { ActionVerificationBadge } from "@/components/verification-badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { InputGroup, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
 
 type Props = {
-  order: OrderDetail;
+  order: OrderDetailView;
 };
 
 /** Label / value row used inside the summary card. */
@@ -34,12 +35,19 @@ function InfoRow({
 }
 
 /**
- * "Summary" card: the order counterparty (with a copyable pubkey) and the order's key dates
- * (created / completed / concluded). Purely informative — no actions live here.
+ * "Summary" card: the order counterparty (with a copyable pubkey), the order's key dates
+ * (created / completed / concluded) and the signature-verification status of the order's signed
+ * facts (buyer-signed terms, seller confirmation, dispute opening, arbiter verdict). Purely
+ * informative — no actions live here.
  */
 export function OrderSummaryCard({ order }: Props) {
   const counterparty = order.role === "buyer" ? order.seller : order.buyer;
   const counterpartyRole = order.role === "buyer" ? "Seller" : "Buyer";
+  const { terms, confirm, dispute, verdict } = order.verification;
+  const confirmLabel =
+    confirm.status === "verified" && confirm.body.kind === "deliver"
+      ? "Keys delivered by seller — signature verified"
+      : "Confirmed by seller — signature verified";
 
   async function copyPubkey() {
     try {
@@ -103,6 +111,22 @@ export function OrderSummaryCard({ order }: Props) {
               {new Date(order.concludedAt).toLocaleDateString("en-US")}
             </InfoRow>
           )}
+        </div>
+
+        <div className="flex flex-col gap-1.5 border-t pt-3">
+          <ActionVerificationBadge
+            verification={terms}
+            verifiedLabel="Order terms signed by the buyer — signature verified"
+          />
+          <ActionVerificationBadge verification={confirm} verifiedLabel={confirmLabel} />
+          <ActionVerificationBadge
+            verification={dispute}
+            verifiedLabel="Dispute opened by a party — signature verified"
+          />
+          <ActionVerificationBadge
+            verification={verdict}
+            verifiedLabel="Verdict signed by the arbiter — signature verified"
+          />
         </div>
       </CardContent>
     </Card>

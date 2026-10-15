@@ -5,25 +5,28 @@ admin identity in [auth.md](./auth.md)).
 
 ## Pages
 
-- `(admin)/disputes` — dispute list as **cards** (only `disputed` and `concluded`; server-side filter in `route.ts`). Each card shows id, status badge, counterparties, total in sats, date. If the order is `concluded` with the escrow still `disputed` (Ark settlement pending), the «Settlement awaiting» badge appears. `DisputeListRow` includes the field `escrowStatus: string | null`.
-- `(admin)/disputes/[id]` — dispute detail with a conclusion dialog.
+- `(admin)/disputes` — dispute list as **cards** (only `disputed` and `concluded`; server-side filter in `route.ts`). Each card shows id, status badge, counterparties, total in sats, date. If the order is `concluded` with the escrow still `disputed` (Ark settlement pending), the «Settlement awaiting» badge appears; when the escrow is `settlementPrepared` (the favoured party prepared, the admin must co-sign) the «Co-sign awaiting» badge appears. `DisputeListRow` includes the field `escrowStatus: string | null`.
+- `(admin)/disputes/[id]` — dispute detail with a conclusion dialog and the «Co-sign settlement» CTA.
 - `(admin)/wallet` — the admin's Arkade wallet (see the Wallet section).
 
 ## API and entities
 
-| Component         | Path                                                                                         |
-| ----------------- | -------------------------------------------------------------------------------------------- |
-| Dispute list      | `src/app/api/admin/disputes/route.ts` → `queryDisputes()` (only `disputed`+`concluded`)      |
-| Dispute detail    | `src/app/api/admin/disputes/[id]/route.ts` → `queryOrderDetailAsAdmin()`                     |
-| Conclude dispute  | `src/app/api/admin/disputes/[id]/conclude/route.ts` → `concludeOrderAsAdmin()`               |
-| Fees config       | `src/app/api/admin/fees/route.ts` — `GET` `{ platformFeePercent, adminDisputeSharePercent }` |
-| Chat (admin read) | `src/app/api/admin/chat/[id]/route.ts`                                                       |
-| Admin message     | `src/app/api/chat/[id]/admin-message/route.ts`                                               |
-| Backend           | `src/lib/backend/mutations-orders.ts`, `query-orders.ts`                                     |
+| Component          | Path                                                                                                            |
+| ------------------ | --------------------------------------------------------------------------------------------------------------- |
+| Dispute list       | `src/app/api/admin/disputes/route.ts` → `queryDisputes()` (only `disputed`+`concluded`)                         |
+| Dispute detail     | `src/app/api/admin/disputes/[id]/route.ts` → `queryOrderDetailAsAdmin()`                                        |
+| Conclude dispute   | `src/app/api/admin/disputes/[id]/conclude/route.ts` → `concludeOrderAsAdmin()`                                  |
+| Co-sign settlement | `src/app/api/admin/disputes/[id]/cosign/route.ts` → `cosignDisputeSettlementAsAdmin()` (`mutations-dispute.ts`) |
+| Fees config        | `src/app/api/admin/fees/route.ts` — `GET` `{ platformFeePercent, adminDisputeSharePercent }`                    |
+| Chat (admin read)  | `src/app/api/admin/chat/[id]/route.ts`                                                                          |
+| Admin message      | `src/app/api/chat/[id]/admin-message/route.ts`                                                                  |
+| Backend            | `src/lib/backend/mutations-orders.ts`, `query-orders.ts`                                                        |
 
 ## Gating
 
-- **Disputes**: use `requireAdminRoute()` (`src/lib/auth/session.ts`).
+- **Disputes**: use `requireAdminRoute()` (`src/lib/auth/session.ts`). `isAdmin` is true when the
+  session pubkey equals `ADMIN_PUBKEY` (see [auth.md](./auth.md)); the same gate applies through the
+  `admin` signer of `signedRoute` on `conclude` and `cosign`.
 - **Admin chat**: uses `requireSessionRoute()` + a manual check `session.user.isAdmin !== true` → 403.
 - **Dispute gate** (`src/lib/backend/dispute-access.ts`): the admin is the escrow's third party **only
   during a dispute**. **Writes** (admin message, attachment upload) require an active dispute
@@ -31,18 +34,28 @@ admin identity in [auth.md](./auth.md)).
   key codes) also allow the orders the admin has **judged** after the settlement
   (`mayAdminReadOrder()` → active dispute **or** `conclusionStatus != null`). Happy-path orders
   (never disputed) are never readable; outside the gate the admin receives 403 on
-  chat/attachments and `code: null` on keys.
+  chat/attachments and no key ciphertext/wrap on keys. Even inside the gate the admin can decrypt a
+  code **only if a dispute party granted it** (`POST /api/orders/[id]/grant-arbiter-keys`, see
+  [crypto/at-rest.md](./crypto/at-rest.md)): the dispute detail decrypts in the admin's browser and
+  shows «Not shared with the arbiter yet» otherwise.
 
 ## Dispute conclusion — `POST /api/admin/disputes/[id]/conclude`
 
+The signed conclude request is linked to the order (`Order.verdictActionId`, the latest verdict) and
+returned with the order detail so that buyer, seller and the arbiter itself verify the verdict and build
+the settlement from the **signed** fields (see [escrow/dispute.md](./escrow/dispute.md)).
+
 **Verdict overridable until the Ark settlement.** The conclusion is **not one-shot**:
-as long as the escrow stays `disputed` (funded case, Ark settlement pending) the admin can
-re-conclude — typically to **change the favoured party** and release the funds when the favoured
-party does not drive the settlement. The block (`409 "Dispute already settled, not modifiable"`) only
-triggers when the escrow is **terminal** (`completed`/`refunded`/`expiredSwept`), or — if there is no
-escrow to settle — when the order is already `concluded`. The UI reflects this: the CTA stays
-enabled and labeled «Update verdict» while the order is `concluded` but the escrow is still
-`disputed`.
+as long as the escrow is `disputed` or `settlementPrepared` (funded case, the arbiter has not
+co-signed yet) the admin can re-conclude — typically to **change the favoured party** and release the
+funds when the favoured party does not drive the settlement. A re-conclusion in `settlementPrepared`
+**discards the stored PSBTs and checkpoints and sets the escrow back to `disputed`** (the favoured
+party must prepare again); the update is guarded on the escrow status, so a concurrent co-signature
+wins. The block (`409 "Dispute already settled, not modifiable"`) triggers once the escrow is
+`settling` (the arbiter co-signed) or **terminal** (`completed`/`refunded`/`expiredSwept`), or — if
+there is no escrow to settle — when the order is already `concluded`. The UI reflects this: the CTA
+stays enabled and labeled «Update verdict» while the order is `concluded` and the escrow is
+`disputed` or `settlementPrepared`.
 
 **Amount and outcome derived from the keys.** In the dialog the admin checks only the **items to
 refund**: `refundAmount` = sum of the prices of the checked keys, `conclusionStatus` derived via
@@ -52,17 +65,23 @@ refund**: `refundAmount` = sum of the prices of the checked keys, `conclusionSta
 `refundAmount` and `conclusionStatus` against the submitted keys (422 if inconsistent); `favouredRole` remains
 the admin's signed choice.
 
-1. `requireAdminRoute()`.
-2. **Admin pubkey derived at runtime** from `ADMIN_MNEMONIC` + `ADMIN_PASSPHRASE`; if absent/invalid → 403.
-3. Body signed **with the admin key**, validated with `concludeDisputeSchema`; the body's `orderId`
-   must match the URL.
-4. `concludeOrderAsAdmin()`:
-   - **Immutability guard**: reads the escrow status; blocks with 409 if terminal
+1. `signedRoute` with the `admin` signer: `requireAdminRoute()` gates first (non-admin → 403), then
+   the signed envelope is verified against the admin session's pubkey and persisted as a
+   `SignedAction` (see [crypto/signing.md](./crypto/signing.md)); `Order.refundSignature` is filled
+   from `action.signature`.
+2. Body validated with `concludeDisputeSchema` (no `signature` field); the body's `orderId` must match
+   the URL.
+3. `concludeOrderAsAdmin()`:
+   - **Immutability guard**: reads the escrow status; blocks with 409 if `settling` or terminal
      (`completed`/`refunded`/`expiredSwept`) or, without an escrow, if the order is already `concluded`. Otherwise
-     it proceeds even on an already `concluded` order (override).
+     it proceeds even on an already `concluded` order (override); from `settlementPrepared` it also
+     clears the stored dispute PSBTs and returns the escrow to `disputed`.
    - Checks whether the escrow is funded (`getEscrowFunding` against `totalSats + platformFee`).
    - **Validates consistency**: `refundAmount` must equal the sum of the prices of the `refundedKeyIds`
      and `conclusionStatus` must match `deriveConclusionStatus()` (422 otherwise).
+   - **Refund-only rule**: a key can be _retained_ for the buyer only if it was **delivered** (a buyer
+     `KeyCodeKey` exists); retaining an undelivered key → **422**. The dialog marks undelivered keys as
+     «Not delivered — refund only» (checked and disabled).
    - Computes the breakdown via `computeDisputeBreakdown` (amount details in
      [escrow/fees.md](./escrow/fees.md)).
    - `Order` → `status: concluded`, saves `refundAmount`, `adminDisputeShare`, `conclusionStatus`
@@ -88,6 +107,22 @@ the admin's signed choice.
      `finalizeDisputeSettlement` (`mutations-dispute.ts`) together with the message "Ark settlement
      completed.".
 
+## Settlement co-signature — `POST /api/admin/disputes/[id]/cosign`
+
+The admin is the escrow's **arbiter** and co-signs the settlement **in their own browser** — the server
+has no arbiter key (only `ADMIN_PUBKEY`, see [auth.md](./auth.md)). When the favoured party has
+prepared the settlement (escrow `settlementPrepared`), the dispute detail shows a **«Co-sign
+settlement»** CTA (`useCosignDisputeSettlement` in `src/hooks/admin.ts`). The admin's browser
+validates the stored PSBT independently — escrow address re-derivation, own-key check, VTXOs read from
+the Ark indexer, breakdown recomputed from the verdict, shared gates — then signs, calls `submitTx` on
+the operator and signs the returned checkpoints. Any failed check aborts with an error toast and
+nothing is signed or sent. It then posts `{ disputeArkTxid, serverSignedCheckpoints,
+adminSignedCheckpoints }` through `signedRoute` (`admin` signer: non-admin → 403): the server requires
+the escrow to be `settlementPrepared` (409 otherwise), the txid to equal the one of the stored favoured
+PSBT (422 otherwise), persists, and moves the escrow to `settling`. The favoured party then finalizes.
+The three-step mechanics are in [escrow/dispute.md](./escrow/dispute.md). The dispute detail
+(`useAdminDisputeDetail`) polls every 10s while the escrow is `disputed`/`settlementPrepared`/`settling`.
+
 ## Chat moderation
 
 The E2E mechanics (why the admin does not read by default, `grant-admin`, wrapping of post-dispute
@@ -98,10 +133,12 @@ messages) are in [crypto/messaging.md](./crypto/messaging.md); attachment encryp
   (`mayAdminReadOrder`, otherwise 403); returns ciphertext + the admin's `MessageKey`
   (populated only after `grant-admin`); the messages include `attachment` (name, type, size, URL).
 - `POST /api/chat/[id]/admin-message` — the admin writes (only during a dispute, 403 otherwise);
-  accepts `{ ciphertext?, keys?, attachment?, signature }`; text E2E-encrypted toward buyer + seller +
-  admin; **signed with the admin key** and verified server-side; 409 if chat `closed`.
-- `POST /api/chat/[id]/attachment` — attachment upload (images, max 5 MB); authorized for
-  buyer/seller always, for the admin **only during a dispute**; 409 if chat `closed`.
+  accepts `{ ciphertext?, keys?, attachment? }`; text E2E-encrypted toward buyer + seller +
+  admin; signed via `signedRoute` with the `admin` signer (verified server-side against the admin
+  session pubkey; `Message.signature` from `action.signature`); 409 if chat `closed`.
+- `POST /api/chat/[id]/attachment?name=…` — **signed** attachment upload (raw body = the image, name in
+  the query string; images, max 5 MB); authorized for buyer/seller always, for the admin **only
+  during a dispute**; 409 if chat `closed`.
 - `GET /api/chat/[id]/attachment/[messageId]` — proxied/decrypted download; authorized for the
   participants always, for the admin if the order is in dispute **or if they judged it**; 404 if the
   message has no attachment.
@@ -111,11 +148,19 @@ messages) are in [crypto/messaging.md](./crypto/messaging.md); attachment encryp
 `AdminDisputeDetail` uses a **two-column** layout (`grid lg:grid-cols-4`, 1fr / 3fr):
 
 - **Left (1fr)**: "Order summary" card (status, total, **escrow funds bar**
-  `EscrowFundingBar` read-only, **Dispute outcome** block when `concluded`, and the **CTA**
-  «Conclude»/«Update verdict») followed by the **lifecycle stepper** (`OrderStepper`,
+  `EscrowFundingBar` read-only — read from the Ark indexer in the browser —, the per-step signature
+  verification badges, **Dispute outcome** block when `concluded`, and the **CTA**
+  «Conclude»/«Update verdict», plus «Co-sign settlement» while the escrow is `settlementPrepared`) followed by the **lifecycle stepper** (`OrderStepper`,
   shared with the order detail, `role` undefined for the admin).
 - **Right (3fr)**: "Counterparties" card (seller/buyer tiles + metadata), "Items" card, "Conversation"
-  card with `<AdminChatThread chatId={order.chatId} />` inline when `order.chatId != null`.
+  card with `<AdminChatThread chatId={order.chatId} parties={…} />` inline when `order.chatId != null`
+  (buyer/seller taken from the verified order, the arbiter is the admin's own key).
+
+The page shows an `OrderVerificationBanner` when something failed verification; «Co-sign settlement»
+and «Conclude»/«Update verdict» are **disabled** while the order is blocked (tampered terms/verdict,
+operator key mismatch, escrow arbiter not the admin's own key). The admin's own verdict is verified
+against its own key; the thread verifies every message's signature and the hash chain (see
+[crypto/verification.md](./crypto/verification.md)).
 
 The thread shows all messages (buyer, seller, admin) with clickable thumbnails; the
 composer includes "Attach image" with preview and removal (usable as long as the chat is open,
@@ -127,17 +172,18 @@ admin chat (`useAdminChat`) every 10s while it is open.
 The `(admin)/wallet` page. It reuses the shared component `src/components/wallet-overview.tsx` (the same
 as [account.md](./account.md)): balance, send/receive, history. It is **entirely client-side** and
 account-agnostic — it reads from the global stores/hooks (`useProfileStore`, `useWalletBalance`/
-`useWalletTransactions`/`useSendPayment`). Since the admin logs in with the same identity used for the
-escrow arbiter pubkey (`ADMIN_MNEMONIC` + `ADMIN_PASSPHRASE`), this wallet **is** the arbiter's
+`useWalletTransactions`/`useSendPayment`). Since the admin logs in with the identity whose pubkey is
+`ADMIN_PUBKEY` (the escrow arbiter pubkey), this wallet **is** the arbiter's
 wallet: the arbitration earnings (`adminDisputeShare`) land here. No dedicated application API: the
 wallet rehydration is global (`WalletAutoReconnect` in `src/providers/index.tsx`).
 
 ## Notes / technical debt
 
 - **Collaborative settlement (Stage 1) implemented:** the dispute conclusion on a funded escrow
-  leaves the escrow in `disputed`; the favoured party drives the Ark settle via leaf 1/2. The admin
-  signature happens server-side during `prepare`. As long as the escrow is `disputed` the verdict is
-  **overridable** (re-conclusion, e.g. to change the favoured party and release the funds); the
-  verdict is fixed only when the escrow becomes terminal.
+  leaves the escrow in `disputed`; the favoured party drives the Ark settle via leaf 1/2 in three
+  steps (prepare → arbiter co-sign → finalize). The arbiter signature is produced **client-side in the
+  admin's browser** (the server holds no arbiter key). As long as the escrow is `disputed` or
+  `settlementPrepared` the verdict is **overridable** (re-conclusion, e.g. to change the favoured
+  party and release the funds); the verdict is fixed once the arbiter co-signs (`settling`).
 - **CSV exit (Stage 2) remaining:** the "Exit unilaterally (CSV)" button is disabled, the endpoint
   `/settle/exit` responds 501. It requires an on-chain provider + funds for the mining fee.

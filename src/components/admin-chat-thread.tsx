@@ -1,12 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { match } from "ts-pattern";
 import { toast } from "react-toastify";
 import { useAdminChat, useAdminSendMessage, useUploadAdminChatAttachment } from "@/hooks/admin";
-import type { ChatMessage } from "@/lib/backend/query-chat-types";
-import type { AttachmentMeta } from "@/hooks/chat";
+import type { AttachmentMeta, VerifiedChatMessage } from "@/hooks/chat";
 import { MessageAttachment } from "@/components/message-attachment";
+import {
+  ChainGapBanner,
+  MessageVerificationBadge,
+  VerificationBadge,
+} from "@/components/verification-badge";
 import { Badge, type BadgeStyle } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -29,16 +33,17 @@ function AdminMessageBubble({
   buyerPubkey,
   sellerPubkey,
 }: {
-  msg: ChatMessage;
+  msg: VerifiedChatMessage;
   buyerPubkey: string;
   sellerPubkey: string;
 }) {
   if (msg.isSystem) {
     return (
-      <div className="flex justify-center">
-        <span className="rounded bg-muted px-3 py-1 text-xs text-muted-foreground">
+      <div className="flex flex-col items-center gap-0.5">
+        <span className="rounded bg-muted px-3 py-1 text-xs italic text-muted-foreground">
           {msg.message ?? "—"}
         </span>
+        <VerificationBadge status="system" className="text-[10px]" />
       </div>
     );
   }
@@ -53,6 +58,21 @@ function AdminMessageBubble({
       ? "bg-primary text-primary-foreground"
       : "bg-accent text-accent-foreground";
 
+  // A message that failed verification is never rendered: its content may have been forged.
+  if (msg.verification.status === "tampered") {
+    return (
+      <div className={`flex flex-col gap-0.5 ${align}`}>
+        <span className="text-xs text-muted-foreground">{senderLabel}</span>
+        <div className="max-w-xs rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm">
+          <MessageVerificationBadge msg={msg} />
+        </div>
+        <span className="text-xs text-muted-foreground">
+          {new Date(msg.sentAt).toLocaleString("en-US")}
+        </span>
+      </div>
+    );
+  }
+
   return (
     <div className={`flex flex-col gap-0.5 ${align}`}>
       <span className="text-xs text-muted-foreground">{senderLabel}</span>
@@ -60,8 +80,9 @@ function AdminMessageBubble({
         {msg.message ?? (msg.attachment == null ? "—" : null)}
         {msg.attachment != null && <MessageAttachment attachment={msg.attachment} />}
       </div>
-      <span className="text-xs text-muted-foreground">
+      <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
         {new Date(msg.sentAt).toLocaleString("en-US")}
+        <MessageVerificationBadge msg={msg} />
       </span>
     </div>
   );
@@ -70,13 +91,18 @@ function AdminMessageBubble({
 type Props = {
   chatId: number;
   showHeader?: boolean;
+  /**
+   * Buyer and seller as established by the VERIFIED order (the dispute detail). Without it the
+   * chat's own (server-provided) buyer/seller are used.
+   */
+  parties?: { buyerPubkey: string; sellerPubkey: string };
 };
 
-export function AdminChatThread({ chatId, showHeader = false }: Props) {
-  const chatQuery = useAdminChat(chatId);
+export function AdminChatThread({ chatId, showHeader = false, parties }: Props) {
+  const chatQuery = useAdminChat(chatId, parties);
   const sendMutation = useAdminSendMessage(chatId, {
-    buyerPubkey: chatQuery.data?.buyerPubkey ?? "",
-    sellerPubkey: chatQuery.data?.sellerPubkey ?? "",
+    buyerPubkey: parties?.buyerPubkey ?? chatQuery.data?.buyerPubkey ?? "",
+    sellerPubkey: parties?.sellerPubkey ?? chatQuery.data?.sellerPubkey ?? "",
   });
   const uploadMutation = useUploadAdminChatAttachment(chatId);
 
@@ -210,14 +236,21 @@ export function AdminChatThread({ chatId, showHeader = false }: Props) {
                   No messages in this chat.
                 </p>
               ) : (
-                chat.messages.map((msg) => (
-                  <AdminMessageBubble
-                    key={msg.id}
-                    msg={msg}
-                    buyerPubkey={chat.buyerPubkey}
-                    sellerPubkey={chat.sellerPubkey}
-                  />
-                ))
+                chat.messages.map((msg) => {
+                  const v = msg.verification;
+                  const gapBefore =
+                    (v.status === "verified" || v.status === "tampered") && v.gapBefore;
+                  return (
+                    <Fragment key={msg.id}>
+                      {gapBefore && <ChainGapBanner />}
+                      <AdminMessageBubble
+                        msg={msg}
+                        buyerPubkey={parties?.buyerPubkey ?? chat.buyerPubkey}
+                        sellerPubkey={parties?.sellerPubkey ?? chat.sellerPubkey}
+                      />
+                    </Fragment>
+                  );
+                })
               )}
               <div ref={bottomRef} />
             </div>

@@ -5,7 +5,8 @@ import { db } from "@/db";
 import { isAfter } from "date-fns";
 import { schnorr } from "@noble/curves/secp256k1.js";
 import { hex } from "@scure/base";
-import { toXOnly, mnemonicToPrivateKey, derivePubkey } from "./utils";
+import { toXOnly } from "./utils";
+import { getAdminPubkey } from "@/lib/backend/admin-key";
 import { SignJWT } from "jose";
 
 const nextAuthSecret = process.env.NEXTAUTH_SECRET;
@@ -102,24 +103,10 @@ export const authOptions: AuthOptions = {
         token.username = user.username;
       }
 
-      if (!process.env.ADMIN_MNEMONIC) {
-        console.error("Missing ADMIN_MNEMONIC in env");
-        return token;
-      }
-
-      try {
-        // La passphrase (ADMIN_PASSPHRASE) è la 13ª parola dell'admin: deve combaciare
-        // con quella usata nella UI, altrimenti la pubkey derivata non corrisponde.
-        const adminPrivateKey = mnemonicToPrivateKey(
-          process.env.ADMIN_MNEMONIC,
-          process.env.ADMIN_PASSPHRASE
-        );
-        const adminPubkey = derivePubkey(adminPrivateKey);
-        token.isAdmin = adminPubkey === token.pubkey;
-      } catch (e) {
-        console.error("Invalid ADMIN_MNEMONIC");
-        console.error(e);
-      }
+      // The admin is whoever logs in with the key behind ADMIN_PUBKEY (public key only: the server
+      // never holds the admin's private key). Missing/invalid ADMIN_PUBKEY → nobody is admin.
+      const adminPubkey = getAdminPubkey();
+      token.isAdmin = adminPubkey !== null && adminPubkey === token.pubkey;
 
       return token;
     },

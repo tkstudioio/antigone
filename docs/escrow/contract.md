@@ -86,8 +86,9 @@ inputs:
 
 - the **operator's** pubkey + `hrp` + `unilateralExitDelay`, via `getArkOperatorConfig()` (a memoized
   network call, `src/lib/ark/operator.ts`);
-- the **admin** pubkey, derived from `ADMIN_MNEMONIC` + `ADMIN_PASSPHRASE` (the admin `Account` is
-  `upsert`ed so `Escrow.arbiterPubkey` has a row to reference) — missing `ADMIN_MNEMONIC` → 500;
+- the **admin** pubkey, read from the `ADMIN_PUBKEY` env via `getAdminPubkey()` (a public key: the
+  server holds no arbiter private key; the admin `Account` is `upsert`ed so `Escrow.arbiterPubkey`
+  has a row to reference) — missing or invalid `ADMIN_PUBKEY` → 500;
 - `exitDelay` (the raw `unilateralExitDelay`, used as the CSV timelock on the exit paths).
 
 The address itself is computed by `deriveEscrowAddress()`. The escrow ↔ order link lives **only** on
@@ -99,3 +100,10 @@ After checkout, `useCheckout` (`src/hooks/cart.ts`) **recomputes** each escrow a
 **same** `deriveEscrowAddress()`, using the `exitDelay` and `nonce` the server returned. If the
 recomputed address doesn't match the server's, it throws and **blocks the payment** — so a tampered or
 buggy server response can't redirect the buyer's funds.
+
+It also checks that the order matches the **buyer-signed terms** (keys, seller, prices, total,
+`escrow.price = total + platformFee`) and that `escrow.serverPubkey` equals the operator's own
+`getInfo().signerPubkey`, read **in the browser** (never from our API); an unreachable operator leaves
+the order unverified and unpaid. The arbiter pubkey is pinned trust-on-first-use. The order detail
+repeats the same checks on every load (`verifyOrderDetail`) and again before any signing or payment. See
+[crypto/verification.md](../crypto/verification.md).

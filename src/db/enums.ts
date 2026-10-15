@@ -24,6 +24,10 @@ export const escrowStatusValues = [
   "buyerCheckpointsSigned",
   "completed",
   "disputed",
+  // The favoured party prepared the settlement (signed ark tx persisted); the arbiter has not
+  // co-signed yet. Funds are still unspent, so the verdict is still overridable.
+  "settlementPrepared",
+  // The arbiter co-signed and submitted to the operator; the favoured party still has to finalize.
   "settling",
   "refunded",
   // Funds were locked but the escrow's VTXOs expired and were swept by the operator (batch expiry)

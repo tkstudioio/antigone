@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { Loader2 } from "lucide-react";
+import { toast } from "react-toastify";
 import { useQueryClient, useIsFetching } from "@tanstack/react-query";
 
 import {
@@ -10,12 +11,16 @@ import {
   useCollaborateRelease,
   useFinalizeRelease,
   useOpenDispute,
+  useDeliverKeys,
+  usePrepareDisputeSettlement,
   useFinalizeDisputeSettlement,
-  useSettleDispute,
+  escrowParamsFrom,
   type EscrowFundingData,
+  type OrderDetailView,
 } from "@/hooks/orders";
 import { useSendPayment } from "@/hooks/wallet";
-import type { OrderDetail } from "@/lib/backend/query-orders";
+import { deriveEscrowAddress } from "@/lib/ark/escrow";
+import { assertEscrowOperator } from "@/lib/ark/operator-signer";
 import { ESCROW_STATUS_LABELS, type EscrowStatus } from "@/lib/escrow-status";
 import { EscrowFundingBar } from "@/components/escrow-funding-bar";
 import { Badge } from "@/components/ui/badge";
@@ -26,11 +31,14 @@ import { match, P as Pattern } from "ts-pattern";
 import { P } from "./ui/typography";
 
 type Props = {
-  order: OrderDetail;
+  order: OrderDetailView;
+  /** Funding read from the Ark indexer by this browser. */
   funding: EscrowFundingData | undefined;
+  /** True when the Ark indexer cannot be reached (no figure is shown or assumed). */
+  fundingUnavailable?: boolean;
 };
 
-export function OrderActionsPanel({ order, funding }: Props) {
+export function OrderActionsPanel({ order, funding, fundingUnavailable }: Props) {
   const queryClient = useQueryClient();
   const isFetchingOrder = useIsFetching({ queryKey: ["orders", "detail", order.id] }) > 0;
 
@@ -39,8 +47,9 @@ export function OrderActionsPanel({ order, funding }: Props) {
   const collaborateRelease = useCollaborateRelease();
   const finalizeRelease = useFinalizeRelease();
   const openDispute = useOpenDispute();
+  const deliverKeys = useDeliverKeys();
+  const prepareDisputeSettlement = usePrepareDisputeSettlement();
   const finalizeDisputeSettlement = useFinalizeDisputeSettlement();
-  const settleDispute = useSettleDispute();
   const sendPayment = useSendPayment();
 
   const releaseBusy =
@@ -49,9 +58,15 @@ export function OrderActionsPanel({ order, funding }: Props) {
     collaborateRelease.isPending ||
     finalizeRelease.isPending ||
     openDispute.isPending ||
+    deliverKeys.isPending ||
+    prepareDisputeSettlement.isPending ||
     finalizeDisputeSettlement.isPending ||
-    settleDispute.isPending ||
     sendPayment.isPending;
+
+  // Every action that signs, pays or settles stays disabled while the order fails verification
+  // (signed terms / delivery / verdict, operator key, arbiter pin) or while another one is running.
+  const blocked = order.verification.blocked != null;
+  const actionsDisabled = releaseBusy || blocked;
 
   const escrow = order.escrow;
   const escrowStatus = escrow?.status as EscrowStatus | undefined;
@@ -69,13 +84,24 @@ export function OrderActionsPanel({ order, funding }: Props) {
     return () => clearInterval(id);
   }, [isAwaitingPayment, order.id, queryClient]);
 
+  // The favoured party is the arbiter's SIGNED choice (server field only for legacy, unsigned verdicts).
+  const verdict = order.verification.verdict;
   const favouredRole =
-    order.favouredRole === "buyer" || order.favouredRole === "seller"
-      ? order.favouredRole
-      : order.conclusionStatus === "completed"
-        ? "seller"
-        : "buyer";
+    verdict.status === "verified"
+      ? verdict.body.favouredRole
+      : order.favouredRole === "buyer" || order.favouredRole === "seller"
+        ? order.favouredRole
+        : order.conclusionStatus === "completed"
+          ? "seller"
+          : "buyer";
+  // Wraps for a dispute go to the TRUSTED arbiter (the pinned one), never to a key only the server named.
+  const trustedArbiterPubkey = order.verification.trustedArbiterPubkey;
   const isFavoured = order.status === "concluded" && role === favouredRole;
+
+  // Dispute opened before the seller confirmed: the keys were never delivered. The seller can still
+  // deliver them (no status change) so the verdict may let the buyer keep them.
+  const needsDelivery =
+    role === "seller" && order.status === "disputed" && order.items.some((i) => !i.delivered);
 
   // Suffix " on <date>" appended to the terminal-state messages when the release timestamp is known.
   const settledAtSuffix = escrow?.releasedAt
@@ -100,15 +126,20 @@ export function OrderActionsPanel({ order, funding }: Props) {
         </div>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        {/* Live funding bar — hidden once funds leave the escrow. */}
-        {funding && escrowStatus !== "completed" && escrowStatus !== "refunded" && (
-          <EscrowFundingBar
-            total={funding.total}
-            price={funding.price}
-            expiresAt={funding.expiresAt}
-            expirySoon={funding.expirySoon}
-            swept={funding.swept}
-          />
+        {/* Live funding bar (read from the Ark indexer) — hidden once funds leave the escrow. */}
+        {escrow && escrowStatus !== "completed" && escrowStatus !== "refunded" && (
+          <>
+            {funding && !fundingUnavailable && (
+              <EscrowFundingBar
+                total={funding.total}
+                price={funding.price}
+                expiresAt={funding.expiresAt}
+                expirySoon={funding.expirySoon}
+                swept={funding.swept}
+              />
+            )}
+            {fundingUnavailable && <EscrowFundingBar total={0} price={escrow.price} unavailable />}
+          </>
         )}
 
         {match({
@@ -116,6 +147,7 @@ export function OrderActionsPanel({ order, funding }: Props) {
           escrowStatus,
           role,
           isFavoured,
+          needsDelivery,
           conclusionStatus: order.conclusionStatus,
         })
           // Cancelled by the admin: terminal state, no action (precedes the role branches to
@@ -127,15 +159,26 @@ export function OrderActionsPanel({ order, funding }: Props) {
             () => (
               <Button
                 className="w-full"
-                disabled={releaseBusy}
+                // The amount still due depends on what the indexer reports as locked.
+                disabled={actionsDisabled || !funding || fundingUnavailable}
                 onClick={async () => {
-                  await sendPayment.mutateAsync({
-                    destination: escrow!.address,
-                    amount: escrow!.price - (funding?.total ?? 0),
-                  });
-                  queryClient.invalidateQueries({
-                    queryKey: ["orders", "detail", order.id],
-                  });
+                  try {
+                    // Before any funds move: the operator key must be the operator's own and the
+                    // address we pay must be the one these escrow parameters derive to.
+                    await assertEscrowOperator(escrow!);
+                    if (deriveEscrowAddress(escrowParamsFrom(escrow!)) !== escrow!.address) {
+                      throw new Error("The escrow address does not match its parameters");
+                    }
+                    await sendPayment.mutateAsync({
+                      destination: escrow!.address,
+                      amount: escrow!.price - funding!.total,
+                    });
+                    queryClient.invalidateQueries({
+                      queryKey: ["orders", "detail", order.id],
+                    });
+                  } catch (err) {
+                    toast.error(err instanceof Error ? err.message : "Payment failed");
+                  }
                 }}
               >
                 Pay
@@ -146,12 +189,12 @@ export function OrderActionsPanel({ order, funding }: Props) {
             <Button
               variant="outline"
               className="w-full"
-              disabled={releaseBusy}
+              disabled={actionsDisabled}
               onClick={() =>
                 openDispute.mutateAsync({
                   orderId: order.id,
                   chatId: order.chatId,
-                  adminPubkey: escrow?.arbiterPubkey ?? null,
+                  adminPubkey: trustedArbiterPubkey,
                 })
               }
             >
@@ -161,7 +204,7 @@ export function OrderActionsPanel({ order, funding }: Props) {
           .with({ role: "buyer", escrowStatus: "sellerReady" }, () => (
             <Button
               className="w-full"
-              disabled={releaseBusy}
+              disabled={actionsDisabled}
               onClick={() => collaborateRelease.mutateAsync(order)}
             >
               Collaborate on release
@@ -179,12 +222,12 @@ export function OrderActionsPanel({ order, funding }: Props) {
             <Button
               variant="outline"
               className="w-full"
-              disabled={releaseBusy}
+              disabled={actionsDisabled}
               onClick={() =>
                 openDispute.mutateAsync({
                   orderId: order.id,
                   chatId: order.chatId,
-                  adminPubkey: escrow?.arbiterPubkey ?? null,
+                  adminPubkey: trustedArbiterPubkey,
                 })
               }
             >
@@ -194,7 +237,7 @@ export function OrderActionsPanel({ order, funding }: Props) {
           .with({ role: "seller", escrowStatus: "buyerCheckpointsSigned" }, () => (
             <Button
               className="w-full"
-              disabled={releaseBusy}
+              disabled={actionsDisabled}
               onClick={() => finalizeRelease.mutateAsync(order)}
             >
               Collect funds
@@ -203,7 +246,7 @@ export function OrderActionsPanel({ order, funding }: Props) {
           .with({ role: "seller", escrowStatus: "fundLocked", orderStatus: "completed" }, () => (
             <Button
               className="w-full"
-              disabled={releaseBusy}
+              disabled={actionsDisabled}
               onClick={() => prepareRelease.mutateAsync(order)}
             >
               Prepare release
@@ -212,35 +255,55 @@ export function OrderActionsPanel({ order, funding }: Props) {
           .with({ role: "seller", escrowStatus: "fundLocked" }, () => (
             <Button
               className="w-full"
-              disabled={releaseBusy}
+              disabled={actionsDisabled}
               onClick={() => confirmAndPrepare.mutateAsync(order)}
             >
               Confirm and prepare release
             </Button>
           ))
           // ── Dispute / settlement (both roles) ──
+          // Dispute open before delivery: the seller may still deliver the keys.
+          .with({ orderStatus: "disputed", escrowStatus: "disputed", needsDelivery: true }, () => (
+            <>
+              <P>Waiting for the administrator&apos;s decision.</P>
+              <P>
+                Some keys were not delivered yet. Deliver them so the verdict can let the buyer keep
+                them; they are also shared with the arbiter.
+              </P>
+              <Button
+                className="w-full"
+                disabled={actionsDisabled}
+                onClick={() => deliverKeys.mutateAsync(order)}
+              >
+                Deliver keys
+              </Button>
+            </>
+          ))
           // Dispute open, awaiting the admin verdict (order + escrow = disputed).
           .with({ orderStatus: "disputed", escrowStatus: "disputed" }, () => (
             <P>Waiting for the administrator&apos;s decision.</P>
           ))
-          // Verdict issued (order = concluded) and escrow still disputed → on-chain settlement.
-          // The favoured party (buyer or seller) drives the settlement.
+          // Verdict issued (order = concluded) and escrow still disputed → settlement on Ark, in three
+          // steps: the favoured party prepares, the arbiter co-signs, the favoured party completes.
           .with({ orderStatus: "concluded", escrowStatus: "disputed", isFavoured: true }, () => (
             <Button
               className="w-full"
-              disabled={releaseBusy}
-              onClick={() => settleDispute.mutateAsync(order)}
+              disabled={actionsDisabled}
+              onClick={() => prepareDisputeSettlement.mutateAsync(order)}
             >
-              Settle and complete
+              Prepare settlement
             </Button>
           ))
           .with({ orderStatus: "concluded", escrowStatus: "disputed" }, () => (
-            <P>Waiting for the counterparty to settle the dispute.</P>
+            <P>Waiting for the counterparty to prepare the settlement.</P>
+          ))
+          .with({ escrowStatus: "settlementPrepared" }, () => (
+            <P>Waiting for the arbiter to co-sign the settlement.</P>
           ))
           .with({ escrowStatus: "settling", isFavoured: true }, () => (
             <Button
               className="w-full"
-              disabled={releaseBusy}
+              disabled={actionsDisabled}
               onClick={() => finalizeDisputeSettlement.mutateAsync(order)}
             >
               Complete settlement

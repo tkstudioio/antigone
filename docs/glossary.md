@@ -16,7 +16,9 @@ layer-2) until the trade resolves. → [README.md](./README.md)
 
 **Arbiter** — the role the admin plays inside an escrow: a neutral third party who can co-sign a
 payout only when there is a dispute, and only toward the outcome the admin ruled. The arbiter is the
-same identity as the platform admin. → [escrow/dispute.md](./escrow/dispute.md)
+same identity as the platform admin, and it signs **in the admin's own browser**, after validating the
+transaction itself: the server knows only its public key (`ADMIN_PUBKEY`), never a private key.
+→ [escrow/dispute.md](./escrow/dispute.md)
 
 **Arkade-OS** — the implementation of the **Ark** protocol (a Bitcoin layer-2) the escrow is built on.
 It lets funds move instantly and cheaply _on Ark_ (off-chain) while staying anchored to Bitcoin, with
@@ -63,7 +65,8 @@ favoured party can drive the settlement on Ark, using the matching arbiter path.
 → [escrow/dispute.md](./escrow/dispute.md)
 
 **Key (license key)** — the good being sold: a license code belonging to a product and a seller, with
-a price in satoshi. Its code is encrypted at rest. → [shop.md](./shop.md) ·
+a price in satoshi. Its code is end-to-end encrypted (the server cannot read it) and delivered to the
+buyer by the seller's browser at confirmation. → [shop.md](./shop.md) ·
 [crypto/at-rest.md](./crypto/at-rest.md)
 
 **Leaf** — one allowed way to spend the escrow, encoded as a branch (script) in the taproot tree. The
@@ -89,8 +92,9 @@ neither is recoverable. → [auth/keys-vault.md](./auth/keys-vault.md)
 **Platform fee** — the marketplace's cut (`PLATFORM_FEE_PERCENT`, default 1%), a surcharge the buyer
 pays on top of the item price at checkout. Non-refundable. → [escrow/fees.md](./escrow/fees.md)
 
-**Replay-guard** — the in-memory store of used nonces that stops a captured signed request from being
-replayed within its freshness window. → [crypto/signing.md](./crypto/signing.md)
+**Replay-guard (nonce store)** — the unique `nonce` column of `signed_action` in Postgres: the first
+time a signed request is seen its nonce is recorded forever, so any replay is rejected (409), across
+restarts and instances. → [crypto/signing.md](./crypto/signing.md)
 
 **Reservation** — a short-lived (10-minute) hold a buyer places on a key while it sits in their cart,
 so two buyers can't check out the same key. → [account/cart.md](./account/cart.md)
@@ -98,13 +102,24 @@ so two buyers can't check out the same key. → [account/cart.md](./account/cart
 **Satoshi (sat)** — the unit all prices are in: an integer, no decimals. Format with `formatPrice()`,
 never with a currency symbol. → [README.md](./README.md)
 
+**Chat hash chain** — every signed chat message carries the hash of the previous message's signed
+action (or a genesis hash bound to the chat id), so a server that removes or reorders messages breaks
+the chain and the browser shows where. → [crypto/verification.md](./crypto/verification.md)
+
 **Schnorr signature** — the secp256k1 signature scheme used for both login (challenge–response) and
 signing every mutation. Private keys never leave the browser.
 → [crypto/signing.md](./crypto/signing.md)
 
-**Signed envelope** — the canonical message (method + path + timestamp + nonce + payload) that the
-client signs for every mutation, binding the request to one endpoint and one short time window.
+**Signed envelope** — the canonical message (v2: method + path with query + timestamp + nonce + SHA-256
+of the raw body) that the client signs for every mutation, binding the request to one endpoint, one
+exact body and one short time window. Signature, timestamp and nonce travel in `x-antigone-*` headers;
+the server verifies them in `signedRoute` and stores every verified request as a `SignedAction`.
 → [crypto/signing.md](./crypto/signing.md)
+
+**Signed action** — one verified signed mutation request persisted as a `SignedAction` row (author,
+method, path, timestamp, nonce, body hash, body, signature). Domain rows (messages, orders, key wraps)
+point at the action that created them, and the browser re-verifies it against the expected author and
+endpoint before trusting the record. → [crypto/verification.md](./crypto/verification.md)
 
 **Stock** — a seller's inventory for a product at a given price tier; the product detail page groups
 available keys into stocks by `(seller, price)`. → [shop.md](./shop.md) ·
@@ -112,6 +127,10 @@ available keys into stocks by `(seller, price)`. → [shop.md](./shop.md) ·
 
 **Taproot tree** — the Bitcoin structure that holds all the escrow's allowed spend paths (leaves) at
 once, revealing only the one actually used. → [escrow/contract.md](./escrow/contract.md)
+
+**TOFU (trust on first use)** — how the browser anchors the arbiter's key: the first arbiter pubkey it
+sees is pinned in `localStorage`; a different one later blocks payments and signing on that order until
+the user explicitly acknowledges it. → [crypto/verification.md](./crypto/verification.md)
 
 **Vault** — the passphrase-encrypted blob in the browser's `localStorage` that stores your mnemonic;
 unlocking it (re-entering the passphrase) reconstitutes your identity after a reload.

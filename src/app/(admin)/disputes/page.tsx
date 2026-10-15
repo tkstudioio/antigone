@@ -75,6 +75,8 @@ export default function AdminDisputePage() {
 
                   const pendingSettlement =
                     row.status === "concluded" && row.escrowStatus === "disputed";
+                  // The favoured party prepared the settlement: the arbiter (admin) must co-sign.
+                  const awaitingCosign = row.escrowStatus === "settlementPrepared";
 
                   return (
                     <Link key={row.id} href={`/disputes/${row.id}`} className="block">
@@ -88,6 +90,11 @@ export default function AdminDisputePage() {
                             {pendingSettlement && (
                               <Badge action="primary" variant="outline" className="text-xs">
                                 Settlement awaiting
+                              </Badge>
+                            )}
+                            {awaitingCosign && (
+                              <Badge action="primary" variant="solid" className="text-xs">
+                                Co-sign awaiting
                               </Badge>
                             )}
                             <Badge {...statusBadge}>{statusLabel}</Badge>

@@ -1,10 +1,49 @@
 import "server-only";
 
 import { db } from "@/db";
+import type { Prisma } from "@prisma/client";
+import { CHAT_CHAIN_CONFLICT_MESSAGE, chatGenesisHash } from "@/lib/chat-chain";
+import { signedActionHash } from "@/lib/auth/verify-signed-action";
 import type { EscrowStatus } from "@/lib/escrow-status";
+import { SIGNED_ACTION_SELECT, toSignedActionRecord } from "./signed-action-record";
 import type { ChatDetail, ChatMessage } from "./query-chat-types";
 
 export type { ChatDetail, ChatMessage };
+
+/** Prisma `include` that loads a message with its keys and the signed action behind it. */
+export const MESSAGE_INCLUDE = {
+  keys: true,
+  signedAction: { select: SIGNED_ACTION_SELECT },
+} satisfies Prisma.MessageInclude;
+
+type MessageRow = Prisma.MessageGetPayload<{ include: typeof MESSAGE_INCLUDE }>;
+
+/**
+ * Serialize a message for one viewer: ciphertext + the viewer's own wrapped content key + the signed
+ * action the client must verify. `viewerPubkey` selects which `MessageKey` row is exposed.
+ */
+export function toChatMessage(m: MessageRow, chatId: number, viewerPubkey: string): ChatMessage {
+  const myKey = m.keys.find((k) => k.recipientPubkey === viewerPubkey) ?? null;
+  return {
+    id: m.id,
+    action: toSignedActionRecord(m.signedAction),
+    senderPubkey: m.senderPubkey,
+    message: m.message,
+    isSystem: m.isSystem ?? false,
+    sentAt: m.sentAt.toISOString(),
+    attachment:
+      m.attachmentKey != null
+        ? {
+            name: m.attachmentName ?? "",
+            contentType: m.attachmentType ?? "",
+            size: m.attachmentSize ?? 0,
+            url: `/api/chat/${chatId}/attachment/${m.id}`,
+          }
+        : null,
+    wrappedCek: myKey?.wrappedCek ?? null,
+    wrapperPubkey: myKey?.wrapperPubkey ?? null,
+  };
+}
 
 // ─── findOrderForChat ─────────────────────────────────────────────────────────
 
@@ -85,9 +124,13 @@ export async function queryChatDetail(params: {
     where: { id: chatId },
     include: {
       order: { select: { buyerPubkey: true, sellerPubkey: true } },
+      // Creation order (ids are monotonic): the per-chat hash chain is verified in this order.
       messages: {
-        orderBy: { sentAt: "asc" },
-        include: { keys: { where: { recipientPubkey: pubkey } } },
+        orderBy: { id: "asc" },
+        include: {
+          keys: { where: { recipientPubkey: pubkey } },
+          signedAction: { select: SIGNED_ACTION_SELECT },
+        },
       },
     },
   });
@@ -100,27 +143,7 @@ export async function queryChatDetail(params: {
     return null;
   }
 
-  const messages: ChatMessage[] = chat.messages.map((m) => {
-    const myKey = m.keys[0] ?? null;
-    return {
-      id: m.id,
-      senderPubkey: m.senderPubkey,
-      message: m.message,
-      isSystem: m.isSystem ?? false,
-      sentAt: m.sentAt.toISOString(),
-      attachment:
-        m.attachmentKey != null
-          ? {
-              name: m.attachmentName ?? "",
-              contentType: m.attachmentType ?? "",
-              size: m.attachmentSize ?? 0,
-              url: `/api/chat/${chat.id}/attachment/${m.id}`,
-            }
-          : null,
-      wrappedCek: myKey?.wrappedCek ?? null,
-      wrapperPubkey: myKey?.wrapperPubkey ?? null,
-    };
-  });
+  const messages: ChatMessage[] = chat.messages.map((m) => toChatMessage(m, chat.id, pubkey));
 
   return {
     id: chat.id,
@@ -135,12 +158,73 @@ export async function queryChatDetail(params: {
 
 // ─── createMessage ────────────────────────────────────────────────────────────
 
+const CHAIN_MISMATCH_ERROR = CHAT_CHAIN_CONFLICT_MESSAGE;
+
+/**
+ * Persist a signed chat message, enforcing the per-chat hash chain: `prevHash` (inside the signed
+ * body) must be the hash of the signed action of the current tail, or the chat genesis hash when no
+ * signed message exists yet. A stale tail answers 409 (the client refetches and retries); the
+ * `(chatId, prevHash)` unique index makes the check race-proof — two concurrent sends cannot both
+ * extend the same tail.
+ */
 export async function createMessage(params: {
   chatId: number;
   senderPubkey: string;
   ciphertext?: string;
   keys?: { recipientPubkey: string; wrappedCek: string }[];
+  /** The message's signature (kept in `Message.signature`). */
   signature: string;
+  /** The persisted signed action this message is created from. */
+  actionId: number;
+  /** The `prevHash` the sender signed. */
+  prevHash: string;
+  attachment?: {
+    key: string;
+    name: string;
+    contentType: string;
+    size: number;
+  };
+}): Promise<{ ok: true; message: MessageRow } | { error: string; status: number }> {
+  const { chatId, senderPubkey, ciphertext, keys, signature, actionId, prevHash, attachment } =
+    params;
+
+  const tail = await db.message.findFirst({
+    where: { chatId, signedActionId: { not: null } },
+    orderBy: { id: "desc" },
+    select: { signedAction: { select: SIGNED_ACTION_SELECT } },
+  });
+  const tailRecord = toSignedActionRecord(tail?.signedAction);
+  const expectedPrevHash = tailRecord ? signedActionHash(tailRecord) : chatGenesisHash(chatId);
+  if (prevHash !== expectedPrevHash) return { error: CHAIN_MISMATCH_ERROR, status: 409 };
+
+  try {
+    const message = await createMessageRow({
+      chatId,
+      senderPubkey,
+      ciphertext,
+      keys,
+      signature,
+      actionId,
+      prevHash,
+      attachment,
+    });
+    return { ok: true, message };
+  } catch (err) {
+    if (typeof err === "object" && err !== null && (err as { code?: unknown }).code === "P2002") {
+      return { error: CHAIN_MISMATCH_ERROR, status: 409 };
+    }
+    throw err;
+  }
+}
+
+async function createMessageRow(params: {
+  chatId: number;
+  senderPubkey: string;
+  ciphertext?: string;
+  keys?: { recipientPubkey: string; wrappedCek: string }[];
+  signature: string;
+  actionId: number;
+  prevHash: string;
   attachment?: {
     key: string;
     name: string;
@@ -148,13 +232,16 @@ export async function createMessage(params: {
     size: number;
   };
 }) {
-  const { chatId, senderPubkey, ciphertext, keys, signature, attachment } = params;
+  const { chatId, senderPubkey, ciphertext, keys, signature, actionId, prevHash, attachment } =
+    params;
   return db.message.create({
     data: {
       chatId,
       senderPubkey,
       message: ciphertext ?? null,
       signature,
+      signedActionId: actionId,
+      prevHash,
       isSystem: false,
       attachmentKey: attachment?.key ?? null,
       attachmentName: attachment?.name ?? null,
@@ -171,7 +258,7 @@ export async function createMessage(params: {
           }
         : undefined,
     },
-    include: { keys: true },
+    include: MESSAGE_INCLUDE,
   });
 }
 

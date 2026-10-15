@@ -31,7 +31,7 @@ export function decodeSettlementTx(
     const checkpointTxs = checkpointPsbtsB64.map((cp) => Transaction.fromPSBT(base64.decode(cp)));
     return { arkTx, checkpointTxs };
   } catch (err) {
-    return { error: `PSBT non valido: ${err instanceof Error ? err.message : String(err)}` };
+    return { error: `Invalid PSBT: ${err instanceof Error ? err.message : String(err)}` };
   }
 }
 
@@ -56,13 +56,13 @@ export function assertSpendsOnlyEscrow(
     return allowedOutpoints.has(asIs) || allowedOutpoints.has(reversed);
   };
 
-  if (checkpointTxs.length === 0) return "Nessun checkpoint nella transazione";
+  if (checkpointTxs.length === 0) return "No checkpoint in the transaction";
   for (const cp of checkpointTxs) {
-    if (cp.inputsLength === 0) return "Checkpoint senza input";
+    if (cp.inputsLength === 0) return "Checkpoint without inputs";
     for (let i = 0; i < cp.inputsLength; i++) {
       const inp = cp.getInput(i);
       if (!outpointAllowed(inp.txid!, inp.index!)) {
-        return `Input non appartenente all'escrow: ${hex.encode(inp.txid!)}:${inp.index}`;
+        return `Input does not belong to the escrow: ${hex.encode(inp.txid!)}:${inp.index}`;
       }
     }
   }
@@ -72,12 +72,12 @@ export function assertSpendsOnlyEscrow(
     checkpointTxids.add(c.id);
     checkpointTxids.add(hex.encode(hex.decode(c.id).slice().reverse()));
   }
-  if (arkTx.inputsLength === 0) return "Nessun input nella transazione";
+  if (arkTx.inputsLength === 0) return "No inputs in the transaction";
   for (let i = 0; i < arkTx.inputsLength; i++) {
     const inp = arkTx.getInput(i);
     const txid = hex.encode(inp.txid!);
     if (!checkpointTxids.has(txid)) {
-      return `Input dell'ark tx non legato ai checkpoint: ${txid}:${inp.index}`;
+      return `Ark tx input not bound to the checkpoints: ${txid}:${inp.index}`;
     }
   }
 
@@ -104,7 +104,7 @@ function spendableOutputs(arkTx: Transaction): { amount: bigint; pkScriptHex: st
 export function assertOutputsMatch(arkTx: Transaction, expected: ExpectedOutput[]): string | null {
   const actual = spendableOutputs(arkTx);
   if (actual.length !== expected.length) {
-    return `Numero di output non corretto: attesi ${expected.length}, ricevuti ${actual.length}`;
+    return `Wrong number of outputs: expected ${expected.length}, got ${actual.length}`;
   }
   const unmatched = [...expected];
   for (const out of actual) {
@@ -113,7 +113,7 @@ export function assertOutputsMatch(arkTx: Transaction, expected: ExpectedOutput[
         exp.amount === out.amount && (exp.pkScriptHex === "" || exp.pkScriptHex === out.pkScriptHex)
     );
     if (idx === -1) {
-      return `Output non atteso: importo=${out.amount} script=${out.pkScriptHex}`;
+      return `Unexpected output: amount=${out.amount} script=${out.pkScriptHex}`;
     }
     unmatched.splice(idx, 1);
   }
@@ -124,7 +124,7 @@ export function assertOutputsMatch(arkTx: Transaction, expected: ExpectedOutput[
 export function assertValueConserved(arkTx: Transaction, expectedTotal: bigint): string | null {
   const total = spendableOutputs(arkTx).reduce((s, o) => s + o.amount, BigInt(0));
   if (total !== expectedTotal) {
-    return `Conservazione del valore violata: somma output ${total} != atteso ${expectedTotal}`;
+    return `Value not conserved: outputs sum ${total} != expected ${expectedTotal}`;
   }
   return null;
 }

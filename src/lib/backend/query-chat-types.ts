@@ -1,6 +1,7 @@
 /**
  * Shared chat types — no server-only import, safe to use in client hooks.
  */
+import type { SignedActionRecord } from "@/lib/auth/verify-signed-action";
 
 export type ChatMessageAttachment = {
   name: string;
@@ -12,6 +13,11 @@ export type ChatMessageAttachment = {
 
 export type ChatMessage = {
   id: number;
+  /**
+   * The signed request that created this message (null for system messages and rows created before
+   * messages were linked to their action). Clients verify it and render from its signed body.
+   */
+  action: SignedActionRecord | null;
   senderPubkey: string | null;
   /** Ciphertext for user messages (ECIES `v1:...`), plaintext for system/legacy messages. */
   message: string | null;

@@ -1,18 +1,22 @@
 /**
  * Server-only Prisma queries for the orders feature.
  *
- * Key business rule for key codes visibility:
- *   - Seller: always sees the full key codes for their orders.
- *   - Buyer: only sees a key code when key.buyerPubkey IS NOT NULL
- *     (i.e. the seller has confirmed the order and assigned the key).
+ * Key business rule for key codes visibility (codes are E2E-encrypted: the server returns the
+ * ciphertext plus the CALLER's own wrapped content key, never a plaintext code):
+ *   - Seller: always gets their own wrapped key for their orders.
+ *   - Buyer: only gets their wrapped key when key.buyerPubkey IS NOT NULL
+ *     (i.e. the seller has delivered/confirmed and the key was assigned).
+ *   - Admin: only gets the arbiter's wrapped key, and only once a party granted it
+ *     (`grant-arbiter-keys`) while the dispute gate `mayAdminReadOrder` is open.
  */
 import "server-only";
 
 import { db } from "@/db";
 import type { Prisma } from "@prisma/client";
-import { safeDecryptCode } from "@/lib/crypto/symmetric";
 import { getEscrowFunding } from "@/lib/ark/funding";
+import type { SignedActionRecord } from "@/lib/auth/verify-signed-action";
 import { mayAdminReadOrder } from "@/lib/backend/dispute-access";
+import { SIGNED_ACTION_SELECT, toSignedActionRecord } from "@/lib/backend/signed-action-record";
 
 // ─── Shared types ─────────────────────────────────────────────────────────────
 
@@ -62,7 +66,14 @@ export type OrdersResponse = {
 
 export type OrderDetailItem = {
   keyId: number;
-  code: string | null;
+  /** E2E ciphertext of the license code; null when the caller has no wrapped key for it. */
+  ciphertext: string | null;
+  /** The caller's wrapped content key (seller / buyer / arbiter, per the visibility rules above). */
+  wrappedCek: string | null;
+  /** ECDH counterpart the caller must use to unwrap `wrappedCek`. */
+  wrapperPubkey: string | null;
+  /** True once the key has been wrapped toward the buyer (the seller delivered it). */
+  delivered: boolean;
   productId: number;
   productName: string;
   productSlug: string;
@@ -90,7 +101,13 @@ export type OrderEscrowDetail = {
   buyerSignedCheckpoints: string[] | null;
   fundedAt: string | null;
   releasedAt: string | null;
-  /** Dispute settlement relay fields (null until prepare runs). */
+  /**
+   * Dispute settlement relay fields. The favoured-signed PSBT + checkpoints are set by prepare (the
+   * arbiter's browser needs them to validate and co-sign); the txid + arbiter-signed checkpoints by
+   * the co-sign step. All null until the matching step runs.
+   */
+  disputeFavouredSignedArkPsbt: string | null;
+  disputeCheckpointPsbts: string[] | null;
   disputeArkTxid: string | null;
   disputeAdminSignedCheckpoints: string[] | null;
   settledAt: string | null;
@@ -116,7 +133,66 @@ export type OrderDetail = {
   favouredRole: string | null;
   refundSignature: string | null;
   concludedAt: string | null;
+  /**
+   * The signed requests behind the order's key facts, for the browser to verify (null = the order
+   * predates the link, or that step has not happened). Values the UI shows or signs against —
+   * terms, delivery, dispute opening, verdict — are read from their SIGNED bodies, never from the
+   * parallel fields above.
+   */
+  checkoutAction: SignedActionRecord | null;
+  confirmAction: SignedActionRecord | null;
+  disputeAction: SignedActionRecord | null;
+  verdictAction: SignedActionRecord | null;
 };
+
+/** Prisma `include` that loads the chat id and the signed actions linked to an order. */
+const ORDER_DETAIL_INCLUDE = {
+  chat: { select: { id: true } },
+  checkoutAction: { select: SIGNED_ACTION_SELECT },
+  confirmAction: { select: SIGNED_ACTION_SELECT },
+  disputeAction: { select: SIGNED_ACTION_SELECT },
+  verdictAction: { select: SIGNED_ACTION_SELECT },
+} satisfies Prisma.OrderInclude;
+
+type OrderDetailRow = Prisma.OrderGetPayload<{ include: typeof ORDER_DETAIL_INCLUDE }>;
+
+function signedActionsOf(
+  row: OrderDetailRow
+): Pick<OrderDetail, "checkoutAction" | "confirmAction" | "disputeAction" | "verdictAction"> {
+  return {
+    checkoutAction: toSignedActionRecord(row.checkoutAction),
+    confirmAction: toSignedActionRecord(row.confirmAction),
+    disputeAction: toSignedActionRecord(row.disputeAction),
+    verdictAction: toSignedActionRecord(row.verdictAction),
+  };
+}
+
+type CodeKeyRow = { recipientPubkey: string; wrapperPubkey: string; wrappedCek: string };
+
+/**
+ * The code-related fields of an order item for one viewer. `viewerRecipient` is the pubkey whose
+ * wrapped key the viewer may receive (null = none): the ciphertext is only released together with it.
+ */
+function codeFieldsFor(
+  key: { code: string; codeKeys: CodeKeyRow[] },
+  viewerRecipient: string | null,
+  buyerPubkey: string
+): Pick<OrderDetailItem, "ciphertext" | "wrappedCek" | "wrapperPubkey" | "delivered"> {
+  const wrap =
+    viewerRecipient != null
+      ? key.codeKeys.find((c) => c.recipientPubkey === viewerRecipient)
+      : undefined;
+  return {
+    ciphertext: wrap ? key.code : null,
+    wrappedCek: wrap?.wrappedCek ?? null,
+    wrapperPubkey: wrap?.wrapperPubkey ?? null,
+    delivered: key.codeKeys.some((c) => c.recipientPubkey === buyerPubkey),
+  };
+}
+
+const CODE_KEYS_SELECT = {
+  select: { recipientPubkey: true, wrapperPubkey: true, wrappedCek: true },
+} as const;
 
 /** Safely parse a JSON-stringified `string[]` column; returns null when empty/invalid. */
 function parsePsbtArray(value: string | null): string[] | null {
@@ -176,6 +252,7 @@ export async function readEscrowFunding(params: {
     (escrow.status === "fundLocked" ||
       escrow.status === "sellerReady" ||
       escrow.status === "disputed" ||
+      escrow.status === "settlementPrepared" ||
       escrow.status === "expiredSwept");
   const now = Date.now();
   const expirySoon =
@@ -433,7 +510,7 @@ export async function queryOrderDetailAsAdmin(params: {
 
   const orderRow = await db.order.findUnique({
     where: { id: orderId },
-    include: { chat: { select: { id: true } } },
+    include: ORDER_DETAIL_INCLUDE,
   });
 
   if (!orderRow) return null;
@@ -449,28 +526,33 @@ export async function queryOrderDetailAsAdmin(params: {
     }),
   ]);
 
+  const escrowRow = orderRow.escrowAddress
+    ? await db.escrow.findUnique({ where: { address: orderRow.escrowAddress } })
+    : null;
+
   const keyRows = await db.key.findMany({
     where: { orderId },
-    include: { product: { select: { id: true, name: true, slug: true } } },
+    include: {
+      product: { select: { id: true, name: true, slug: true } },
+      codeKeys: CODE_KEYS_SELECT,
+    },
     orderBy: { id: "asc" },
   });
 
-  // The admin sees decrypted key codes while the order is under dispute, or afterwards if it
-  // adjudicated the dispute — same confidentiality gate as chat/attachments. Outside that, null.
+  // The admin gets the code ciphertext + its arbiter-wrapped key only while the order is under
+  // dispute, or afterwards if it adjudicated the dispute — same confidentiality gate as
+  // chat/attachments — and only once a party granted the arbiter's wrap. Outside that, nothing.
   const adminMaySeeCodes = mayAdminReadOrder(orderRow);
+  const arbiterRecipient = adminMaySeeCodes ? (escrowRow?.arbiterPubkey ?? null) : null;
   const items: OrderDetailItem[] = keyRows.map((k) => ({
     keyId: k.id,
-    code: adminMaySeeCodes ? safeDecryptCode(k.code) : null,
+    ...codeFieldsFor(k, arbiterRecipient, orderRow.buyerPubkey),
     productId: k.product.id,
     productName: k.product.name,
     productSlug: k.product.slug,
     price: k.price,
     refunded: k.refunded,
   }));
-
-  const escrowRow = orderRow.escrowAddress
-    ? await db.escrow.findUnique({ where: { address: orderRow.escrowAddress } })
-    : null;
 
   const escrow: OrderEscrowDetail | null = escrowRow
     ? {
@@ -490,6 +572,8 @@ export async function queryOrderDetailAsAdmin(params: {
         buyerSignedCheckpoints: parsePsbtArray(escrowRow.buyerSignedCheckpoints),
         fundedAt: escrowRow.fundedAt ? escrowRow.fundedAt.toISOString() : null,
         releasedAt: escrowRow.releasedAt ? escrowRow.releasedAt.toISOString() : null,
+        disputeFavouredSignedArkPsbt: escrowRow.disputeFavouredSignedArkPsbt,
+        disputeCheckpointPsbts: parsePsbtArray(escrowRow.disputeCheckpointPsbts),
         disputeArkTxid: escrowRow.disputeArkTxid,
         disputeAdminSignedCheckpoints: parsePsbtArray(escrowRow.disputeAdminSignedCheckpoints),
         settledAt: escrowRow.settledAt ? escrowRow.settledAt.toISOString() : null,
@@ -522,6 +606,7 @@ export async function queryOrderDetailAsAdmin(params: {
     favouredRole: orderRow.favouredRole,
     refundSignature: orderRow.refundSignature,
     concludedAt: orderRow.concludedAt ? orderRow.concludedAt.toISOString() : null,
+    ...signedActionsOf(orderRow),
   };
 }
 
@@ -538,7 +623,7 @@ export async function queryOrderDetail(params: {
       id: orderId,
       OR: [{ buyerPubkey: pubkey }, { sellerPubkey: pubkey }],
     },
-    include: { chat: { select: { id: true } } },
+    include: ORDER_DETAIL_INCLUDE,
   });
 
   if (!orderRow) return null;
@@ -558,7 +643,10 @@ export async function queryOrderDetail(params: {
 
   const keyRows = await db.key.findMany({
     where: { orderId },
-    include: { product: { select: { id: true, name: true, slug: true } } },
+    include: {
+      product: { select: { id: true, name: true, slug: true } },
+      codeKeys: CODE_KEYS_SELECT,
+    },
     orderBy: { id: "asc" },
   });
 
@@ -584,6 +672,8 @@ export async function queryOrderDetail(params: {
         buyerSignedCheckpoints: parsePsbtArray(escrowRow.buyerSignedCheckpoints),
         fundedAt: escrowRow.fundedAt ? escrowRow.fundedAt.toISOString() : null,
         releasedAt: escrowRow.releasedAt ? escrowRow.releasedAt.toISOString() : null,
+        disputeFavouredSignedArkPsbt: escrowRow.disputeFavouredSignedArkPsbt,
+        disputeCheckpointPsbts: parsePsbtArray(escrowRow.disputeCheckpointPsbts),
         disputeArkTxid: escrowRow.disputeArkTxid,
         disputeAdminSignedCheckpoints: parsePsbtArray(escrowRow.disputeAdminSignedCheckpoints),
         settledAt: escrowRow.settledAt ? escrowRow.settledAt.toISOString() : null,
@@ -592,7 +682,12 @@ export async function queryOrderDetail(params: {
 
   const items: OrderDetailItem[] = keyRows.map((k) => ({
     keyId: k.id,
-    code: role === "seller" || k.buyerPubkey !== null ? safeDecryptCode(k.code) : null,
+    // Seller: always their own wrap. Buyer: only once the key was assigned to them (delivery).
+    ...codeFieldsFor(
+      k,
+      role === "seller" || k.buyerPubkey !== null ? pubkey : null,
+      orderRow.buyerPubkey
+    ),
     productId: k.product.id,
     productName: k.product.name,
     productSlug: k.product.slug,
@@ -626,5 +721,6 @@ export async function queryOrderDetail(params: {
     favouredRole: orderRow.favouredRole,
     refundSignature: orderRow.refundSignature,
     concludedAt: orderRow.concludedAt ? orderRow.concludedAt.toISOString() : null,
+    ...signedActionsOf(orderRow),
   };
 }

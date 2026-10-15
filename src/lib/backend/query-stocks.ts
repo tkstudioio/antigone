@@ -1,7 +1,6 @@
 import "server-only";
 
 import { db } from "@/db";
-import { safeDecryptCode } from "@/lib/crypto/symmetric";
 
 export type StockProduct = {
   productId: number;
@@ -28,9 +27,15 @@ export type StockTier = {
   availableCount: number;
 };
 
+/**
+ * A stock key as seen by its seller: the E2E ciphertext plus the seller's own wrapped content key.
+ * The browser decrypts; the server never returns a plaintext code.
+ */
 export type StockKey = {
   id: string;
-  code: string | null;
+  ciphertext: string;
+  wrappedCek: string | null;
+  wrapperPubkey: string | null;
   createdAt: Date;
 };
 
@@ -178,7 +183,15 @@ export async function queryStockTier(params: {
       orderId: null,
       OR: [{ reservedUntil: null }, { reservedUntil: { lte: now } }],
     },
-    select: { id: true, code: true, createdAt: true },
+    select: {
+      id: true,
+      code: true,
+      createdAt: true,
+      codeKeys: {
+        where: { recipientPubkey: sellerPubkey },
+        select: { wrappedCek: true, wrapperPubkey: true },
+      },
+    },
     orderBy: { createdAt: "asc" },
   });
 
@@ -189,7 +202,9 @@ export async function queryStockTier(params: {
     availableCount: rows.length,
     keys: rows.map((r) => ({
       id: String(r.id),
-      code: safeDecryptCode(r.code),
+      ciphertext: r.code,
+      wrappedCek: r.codeKeys[0]?.wrappedCek ?? null,
+      wrapperPubkey: r.codeKeys[0]?.wrapperPubkey ?? null,
       createdAt: r.createdAt,
     })),
   };

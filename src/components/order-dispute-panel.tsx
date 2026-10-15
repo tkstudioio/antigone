@@ -1,6 +1,6 @@
 "use client";
 
-import type { OrderDetail } from "@/lib/backend/query-orders";
+import type { OrderDetailView } from "@/hooks/orders";
 import {
   CONCLUSION_STATUS_LABELS,
   CONCLUSION_STATUS_BADGE,
@@ -9,6 +9,7 @@ import {
 import { canOpenDispute, type EscrowStatus } from "@/lib/escrow-status";
 import { formatPrice } from "@/lib/utils";
 import { OrderChatThread } from "@/components/order-chat-thread";
+import { ActionVerificationBadge } from "@/components/verification-badge";
 import { Badge, type BadgeStyle } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
@@ -17,14 +18,14 @@ import { Separator } from "@/components/ui/separator";
 const DEFAULT_BADGE: BadgeStyle = { action: "muted", variant: "outline" };
 
 type Props = {
-  order: OrderDetail;
+  order: OrderDetailView;
 };
 
 /**
  * Whether the dispute panel should be rendered at all: there is a chat (a dispute has been opened,
  * or one is ongoing/concluded) or a dispute can still be opened from the actions sidebar.
  */
-export function shouldShowDisputePanel(order: OrderDetail): boolean {
+export function shouldShowDisputePanel(order: OrderDetailView): boolean {
   return (
     order.chatId != null ||
     canOpenDispute(order.status, order.escrow?.status as EscrowStatus | undefined)
@@ -70,6 +71,10 @@ export function OrderDisputePanel({ order }: Props) {
       <CardContent className="flex flex-col gap-4">
         {isConcluded && (
           <div className="flex flex-col gap-3">
+            <ActionVerificationBadge
+              verification={order.verification.verdict}
+              verifiedLabel="Verdict signed by the arbiter — signature verified"
+            />
             <div>
               <BreakdownRow
                 label="Buyer refund"
