@@ -27,6 +27,8 @@ export async function reserveKeys(params: {
     const candidates = await tx.key.findMany({
       where: {
         productId,
+        // An archived product accepts no new reservations.
+        product: { archivedAt: null },
         orderId: null,
         OR: [{ reservedUntil: null }, { reservedUntil: { lte: now } }],
         // When a specific stock is requested, pin both the seller and the exact

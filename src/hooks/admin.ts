@@ -1,8 +1,8 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { backend } from "@/lib/backend/index";
-import { postSigned, uploadSigned } from "@/lib/auth/signed-request";
+import { postSigned, requestSigned, uploadSigned } from "@/lib/auth/signed-request";
 import useProfileStore from "@/stores/profile";
 import { buildEnvelope } from "@/lib/crypto/message-envelope";
 import { validateAndCosignDisputeAsArbiter } from "@/lib/ark/dispute";
@@ -22,9 +22,16 @@ import type { AdminChatsResponse } from "@/lib/backend/query-chats";
 import type { ChatDetail } from "@/lib/backend/query-chat-types";
 import type { AttachmentMeta, ChatParties, VerifiedChatDetail } from "@/hooks/chat";
 import type { DisputesResponse, OrderDetail } from "@/lib/backend/query-orders";
+import type {
+  AdminProductRow,
+  AdminProductSort,
+  AdminProductsResponse,
+  AdminProductStatus,
+} from "@/lib/backend/query-admin-products";
 import { toast } from "react-toastify";
 
 export type { AdminChatsResponse };
+export type { AdminProductRow, AdminProductSort, AdminProductsResponse, AdminProductStatus };
 
 export type AdminChatsQuery = {
   page?: number;
@@ -285,5 +292,112 @@ export function useAdminFeeConfig() {
     queryKey: ["admin-fees"],
     queryFn: () => backend.get<FeeConfig>("/admin/fees").then((r) => r.data),
     staleTime: 5 * 60 * 1000,
+  });
+}
+
+// ─── Catalog ─────────────────────────────────────────────────────────────────
+
+export type AdminProductsQuery = {
+  page?: number;
+  search?: string;
+  status?: AdminProductStatus;
+  sort?: AdminProductSort;
+  dir?: "asc" | "desc";
+};
+
+export function useAdminProducts(query: AdminProductsQuery) {
+  return useQuery({
+    queryKey: ["admin-products", query],
+    queryFn: () =>
+      backend.get<AdminProductsResponse>("/admin/products", { params: query }).then((r) => r.data),
+    placeholderData: keepPreviousData,
+  });
+}
+
+/** The editable fields of a product, as the create/update endpoints take them. */
+export type ProductFields = {
+  name: string;
+  slug: string;
+  description: string | null;
+  rating: number | null;
+  imageUrl: string | null;
+};
+
+function invalidateCatalog(queryClient: ReturnType<typeof useQueryClient>) {
+  void queryClient.invalidateQueries({ queryKey: ["admin-products"] });
+  void queryClient.invalidateQueries({ queryKey: ["products"] });
+}
+
+/**
+ * Create (no `id`) or update a product. A new image `file`, if any, is uploaded first (signed raw
+ * upload) and its bucket key becomes `imageUrl`.
+ */
+export function useSaveProduct() {
+  const queryClient = useQueryClient();
+  const privateKey = useProfileStore((s) => s.account?.privateKey);
+
+  return useMutation({
+    mutationFn: async ({
+      id,
+      fields,
+      file,
+    }: {
+      id?: number;
+      fields: ProductFields;
+      file?: File | null;
+    }): Promise<{ id: number; slug: string }> => {
+      if (!privateKey) throw new Error("Wallet unavailable");
+
+      let imageUrl = fields.imageUrl;
+      if (file) {
+        const { key } = await uploadSigned<{ key: string }>(
+          "/admin/products/image",
+          file,
+          privateKey
+        );
+        imageUrl = key;
+      }
+
+      const payload = { ...fields, imageUrl };
+      return id == null
+        ? postSigned("/admin/products", payload, privateKey)
+        : requestSigned("PATCH", `/admin/products/${id}`, { id, ...payload }, privateKey);
+    },
+    onSuccess: () => invalidateCatalog(queryClient),
+  });
+}
+
+export function useSetProductArchived() {
+  const queryClient = useQueryClient();
+  const privateKey = useProfileStore((s) => s.account?.privateKey);
+
+  return useMutation({
+    mutationFn: async ({ id, archived }: { id: number; archived: boolean }) => {
+      if (!privateKey) throw new Error("Wallet unavailable");
+      return postSigned<{ id: number; archivedAt: string | null }>(
+        `/admin/products/${id}/archive`,
+        { id, archived },
+        privateKey
+      );
+    },
+    onSuccess: () => invalidateCatalog(queryClient),
+  });
+}
+
+export function useDeleteProduct() {
+  const queryClient = useQueryClient();
+  const privateKey = useProfileStore((s) => s.account?.privateKey);
+
+  return useMutation({
+    mutationFn: async ({ id }: { id: number }) => {
+      if (!privateKey) throw new Error("Wallet unavailable");
+      return requestSigned<{ deleted: true }>(
+        "DELETE",
+        `/admin/products/${id}`,
+        { id },
+        privateKey
+      );
+    },
+    onSuccess: () => invalidateCatalog(queryClient),
   });
 }

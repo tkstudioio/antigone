@@ -57,7 +57,7 @@ export type CheckoutItem = { keyId: number; sellerPubkey: string; price: number 
 
 /** Why a requested key could not be checked out. */
 export type UnavailableKeyReason =
-  "not_found" | "already_sold" | "reserved_by_other" | "reservation_expired";
+  "not_found" | "already_sold" | "reserved_by_other" | "reservation_expired" | "product_archived";
 
 export type UnavailableKey = { keyId: number; reason: UnavailableKeyReason };
 
@@ -129,6 +129,8 @@ async function runCheckout(
         orderId: null,
         reservedBy: buyerPubkey,
         reservedUntil: { gte: now },
+        // A product archived after the reservation can no longer be checked out.
+        product: { archivedAt: null },
       },
       include: { seller: { select: { pubkey: true, username: true } } },
     });
@@ -153,7 +155,13 @@ async function runCheckout(
     ): Promise<UnavailableKey[]> => {
       const rows = await tx.key.findMany({
         where: { id: { in: ids } },
-        select: { id: true, orderId: true, reservedBy: true, reservedUntil: true },
+        select: {
+          id: true,
+          orderId: true,
+          reservedBy: true,
+          reservedUntil: true,
+          product: { select: { archivedAt: true } },
+        },
       });
       const byId = new Map(rows.map((r) => [r.id, r]));
       const lost =
@@ -163,6 +171,7 @@ async function runCheckout(
         let reason: UnavailableKeyReason;
         if (!row) reason = "not_found";
         else if (row.orderId !== null) reason = "already_sold";
+        else if (row.product.archivedAt !== null) reason = "product_archived";
         else if (row.reservedBy !== null && row.reservedBy !== buyerPubkey)
           reason = "reserved_by_other";
         else reason = "reservation_expired";

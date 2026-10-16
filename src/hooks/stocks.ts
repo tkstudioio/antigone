@@ -16,6 +16,8 @@ export type StockProduct = {
   lowestPrice: number;
   highestPrice: number;
   priceTiers: number;
+  /** The admin archived the product: these keys are no longer on sale. */
+  archived: boolean;
 };
 
 export type StockProductsResponse = {

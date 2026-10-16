@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { getServerSession } from "next-auth";
-import { ArrowLeft, KeyRound, PackageX, ShieldCheck } from "lucide-react";
+import { Archive, ArrowLeft, KeyRound, PackageX, ShieldCheck } from "lucide-react";
 
 import { authOptions } from "@/lib/auth-options";
 import { queryProductDetail } from "@/lib/backend/query-product-detail";
@@ -39,6 +39,8 @@ export async function generateMetadata({
     title: product.name,
     description,
     alternates: { canonical },
+    // Archived products stay reachable (links from past orders) but are no longer for sale.
+    ...(product.archived ? { robots: { index: false } } : {}),
     openGraph: {
       type: "website",
       title: product.name,
@@ -168,12 +170,16 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
               aria-hidden
               className="flex size-10 items-center justify-center rounded-md bg-muted text-muted-foreground [&_svg]:size-5"
             >
-              <PackageX />
+              {product.archived ? <Archive /> : <PackageX />}
             </span>
             <div className="space-y-1">
-              <p className="font-semibold">Out of stock</p>
+              <p className="font-semibold">
+                {product.archived ? "No longer available" : "Out of stock"}
+              </p>
               <p className="text-sm text-muted-foreground">
-                No seller has keys for this product right now.
+                {product.archived
+                  ? "This product has been removed from the catalog and can no longer be bought."
+                  : "No seller has keys for this product right now."}
               </p>
             </div>
             <Button asChild variant="outline" action="muted" size="sm">

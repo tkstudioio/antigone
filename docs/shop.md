@@ -99,11 +99,16 @@ It exports `generateMetadata()` for SEO: `title`, `description` (extracted from 
 
 ### SEO — sitemap and robots
 
-- `src/app/sitemap.ts` (`force-dynamic`) generates `/sitemap.xml`: home, `/products`, and one entry for each `/products/[slug]` (it queries `db.product` directly, `lastModified = createdAt`). The detail pages are the real indexing targets; the listing remains an entry point with only the first page rendered server-side (infinite scroll does not produce crawlable paginated URLs).
-- `src/app/robots.ts` allows crawling of the public storefront, excludes the authenticated/admin areas (`/api/`, `/cart`, `/wallet`, `/stocks`, `/orders`, `/disputes`) and points to the sitemap.
+- `src/app/sitemap.ts` (`force-dynamic`) generates `/sitemap.xml`: home, `/products`, and one entry for each non-archived `/products/[slug]` (it queries `db.product` directly, `lastModified = createdAt`). The detail pages are the real indexing targets; the listing remains an entry point with only the first page rendered server-side (infinite scroll does not produce crawlable paginated URLs).
+- `src/app/robots.ts` allows crawling of the public storefront, excludes the authenticated/admin areas (`/api/`, `/cart`, `/wallet`, `/stocks`, `/orders`, `/disputes`, `/catalog`) and points to the sitemap.
 - Base URL = `NEXTAUTH_URL`.
 
 ## Notes
 
+- Products are created and maintained by the admin in `(admin)/catalog` (see [admin.md](./admin.md)).
+  **Archived** products (`archivedAt` set) are excluded from `queryProducts()` — catalog, home and
+  `GET /api/products` — and from the sitemap; their detail page still resolves, with `noindex` and a
+  «No longer available» state instead of the sellers list (`queryProductDetail()` returns
+  `archived: true` and no stocks).
 - License keys (`Key`) are the goods: each key belongs to a `Product` and to a seller, with a `price` in satoshi.
 - A key's availability depends on `orderId` (not sold) and on the reservation (`reservedBy`/`reservedUntil`) — see the cart flow in the dashboard domain.

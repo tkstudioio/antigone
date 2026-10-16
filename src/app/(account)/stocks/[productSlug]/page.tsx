@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { Archive, ArrowLeft } from "lucide-react";
 import { notFound } from "next/navigation";
 import { db } from "@/db";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { H1, P } from "@/components/ui/typography";
 import { StocksDetail } from "@/components/stocks-detail";
@@ -15,7 +16,7 @@ export default async function StocksDetailPage({
 
   const productRow = await db.product.findUnique({
     where: { slug: productSlug },
-    select: { id: true, name: true, slug: true },
+    select: { id: true, name: true, slug: true, archivedAt: true },
   });
 
   if (!productRow) {
@@ -42,6 +43,16 @@ export default async function StocksDetailPage({
           </P>
         </div>
       </div>
+      {productRow.archivedAt && (
+        <Alert action="negative">
+          <Archive aria-hidden />
+          <AlertTitle>This product has been archived</AlertTitle>
+          <AlertDescription>
+            It is no longer listed in the shop: these keys cannot be bought and no new stock can be
+            added. You can still delete them.
+          </AlertDescription>
+        </Alert>
+      )}
       <StocksDetail productId={productRow.id} productName={productRow.name} />
     </div>
   );

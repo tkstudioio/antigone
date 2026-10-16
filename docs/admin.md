@@ -1,4 +1,4 @@
-# Domain `(admin)` — Moderation and disputes
+# Domain `(admin)` — Moderation, disputes and catalog
 
 Area reserved for the platform admin. The `(admin)` layout gates on `session.user.isAdmin` (see
 admin identity in [auth.md](./auth.md)).
@@ -7,6 +7,8 @@ admin identity in [auth.md](./auth.md)).
 
 - `(admin)/disputes` — dispute list as **cards** (only `disputed` and `concluded`; server-side filter in `route.ts`). Each card shows id, status badge, counterparties, total in sats, date. If the order is `concluded` with the escrow still `disputed` (Ark settlement pending), the «Settlement awaiting» badge appears; when the escrow is `settlementPrepared` (the favoured party prepared, the admin must co-sign) the «Co-sign awaiting» badge appears. `DisputeListRow` includes the field `escrowStatus: string | null`.
 - `(admin)/disputes/[id]` — dispute detail with a conclusion dialog and the «Co-sign settlement» CTA.
+- `(admin)/catalog` — product catalog management: create, edit, archive/restore and delete products
+  (see the Catalog section).
 - `(admin)/wallet` — the admin's Arkade wallet (see the Wallet section).
 
 ## API and entities
@@ -20,7 +22,13 @@ admin identity in [auth.md](./auth.md)).
 | Fees config        | `src/app/api/admin/fees/route.ts` — `GET` `{ platformFeePercent, adminDisputeSharePercent }`                    |
 | Chat (admin read)  | `src/app/api/admin/chat/[id]/route.ts`                                                                          |
 | Admin message      | `src/app/api/chat/[id]/admin-message/route.ts`                                                                  |
-| Backend            | `src/lib/backend/mutations-orders.ts`, `query-orders.ts`                                                        |
+| Catalog list       | `GET /api/admin/products` → `queryAdminProducts()` (`query-admin-products.ts`)                                  |
+| Create product     | `POST /api/admin/products` → `createProduct()` (`mutations-products.ts`)                                        |
+| Update product     | `PATCH /api/admin/products/[id]` → `updateProduct()`                                                            |
+| Archive / restore  | `POST /api/admin/products/[id]/archive` → `setProductArchived()`                                                |
+| Delete product     | `DELETE /api/admin/products/[id]` → `deleteProduct()` (only without keys)                                       |
+| Product image      | `POST /api/admin/products/image` → `putProductObject()` (`src/lib/storage/s3.ts`)                               |
+| Backend            | `src/lib/backend/mutations-orders.ts`, `query-orders.ts`, `mutations-products.ts`, `query-admin-products.ts`    |
 
 ## Gating
 
@@ -122,6 +130,46 @@ the escrow to be `settlementPrepared` (409 otherwise), the txid to equal the one
 PSBT (422 otherwise), persists, and moves the escrow to `settling`. The favoured party then finalizes.
 The three-step mechanics are in [escrow/dispute.md](./escrow/dispute.md). The dispute detail
 (`useAdminDisputeDetail`) polls every 10s while the escrow is `disputed`/`settlementPrepared`/`settling`.
+
+## Catalog — `(admin)/catalog`
+
+Products are created and maintained here (`pnpm db:seed` remains only a dev shortcut). The page is a
+thin server component rendering `AdminProductsTable` (`src/components/admin-products-table.tsx`):
+search on name/slug (debounced), a status `SegmentedControl` (Listed / Archived / All → `status` in
+the URL, default `active`), sort (Newest / Name), pagination, and one row per product with its
+thumbnail, slug, an «Archived» badge, the key counters (available · sold · total) and an actions menu
+(Edit, Archive / List again, Delete). Hooks: `useAdminProducts`, `useSaveProduct`,
+`useSetProductArchived`, `useDeleteProduct` in `src/hooks/admin.ts`.
+
+- **Create / edit** (`AdminProductDialog`, `src/components/admin-product-dialog.tsx`): name, slug
+  (derived from the name while creating, until edited by hand; `PRODUCT_SLUG_REGEX`), description,
+  optional rating 0–5 (it orders the home page's «Top-rated» strip) and image. Fields validated by
+  `productFieldsSchema` (`src/validators/index.ts`); a taken slug → **409**, shown on the slug field.
+  Changing the slug changes the product URL.
+- **Image**: a picked file (JPEG/PNG/WebP/GIF, max 5 MB) is uploaded first as a **signed raw upload**
+  (`POST /api/admin/products/image`, `admin` signer) and stored **in clear** under
+  `products/<uuid>.<ext>` — product images are public and served by `GET /api/images/[...key]`. The
+  returned key becomes `imageUrl` in the create/update payload. The server accepts as `imageUrl`
+  only `null`, an uploaded key (`PRODUCT_IMAGE_KEY_REGEX`) or, on update, the product's current
+  value unchanged (so seeded external URLs survive an edit) — anything else → **422**. A replaced or
+  removed uploaded image is deleted from the bucket best-effort; an upload whose dialog is cancelled
+  stays behind as an orphan object.
+- **Archive** (`Product.archivedAt`): the product leaves the storefront and stops selling, while
+  existing orders and their keys are untouched; «List again» clears it. For an archived product:
+  - it is hidden from `queryProducts()` (catalog, home, `GET /api/products` and therefore the
+    add-stock picker) and from the sitemap;
+  - its detail page stays reachable (links from past orders) with `noindex` and a «No longer
+    available» state instead of the sellers list;
+  - `reserveKeys` and the checkout no longer match its keys (checkout reason `product_archived`),
+    and `POST /api/stocks` refuses new keys (**409**);
+  - sellers still see their stock, flagged «Archived · not on sale», and can delete it.
+- **Delete**: permanent, allowed **only for a product that never had keys** (`Key.product` cascades,
+  so it would wipe sellers' stock and the keys of past orders). The check and the delete are one
+  conditional `deleteMany` (`keys: { none: {} }`); otherwise **409** «archive it instead». The menu
+  item is disabled when `totalKeys > 0`.
+
+Every catalog mutation is signed with the `admin` signer (`signedRoute`: non-admin → 403) and the
+body's `id` must match the URL.
 
 ## Chat moderation
 

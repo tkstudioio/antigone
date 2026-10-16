@@ -10,6 +10,8 @@ export type StockProduct = {
   lowestPrice: number;
   highestPrice: number;
   priceTiers: number;
+  /** The admin archived the product: these keys are no longer on sale. */
+  archived: boolean;
 };
 
 export type StockProductsResponse = {
@@ -108,7 +110,7 @@ export async function queryStockProducts(params: {
   // Fetch product metadata.
   const products = await db.product.findMany({
     where: { id: { in: productIds } },
-    select: { id: true, name: true, slug: true },
+    select: { id: true, name: true, slug: true, archivedAt: true },
   });
 
   // Merge.
@@ -122,6 +124,7 @@ export async function queryStockProducts(params: {
       lowestPrice: agg.lowestPrice,
       highestPrice: agg.highestPrice,
       priceTiers: agg.priceTiers,
+      archived: p.archivedAt !== null,
     };
   });
 

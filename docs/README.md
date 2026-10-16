@@ -69,7 +69,7 @@ flowchart TB
     subgraph Authenticated
         auth["🔐 (auth)<br/>passwordless login"]
         account["💼 (account)<br/>cart, orders, stock,<br/>wallet, chat"]
-        admin["🛡️ (admin)<br/>dispute moderation"]
+        admin["🛡️ (admin)<br/>dispute moderation,<br/>product catalog"]
     end
     shop --> auth --> account
     account -.dispute.-> admin

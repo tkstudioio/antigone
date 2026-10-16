@@ -22,10 +22,13 @@ export async function queryProducts(params: {
 
   const now = new Date();
 
-  const nameFilter =
-    search != null && search.length > 0
+  // Archived products are off the storefront (and out of the stock pickers that use this list).
+  const productFilter = {
+    archivedAt: null,
+    ...(search != null && search.length > 0
       ? { name: { contains: search, mode: "insensitive" as const } }
-      : undefined;
+      : {}),
+  };
 
   // Pass 1 — product rows (name/rating sort applied here when possible)
   const productOrderBy = (() => {
@@ -36,7 +39,7 @@ export async function queryProducts(params: {
   })();
 
   const products = await db.product.findMany({
-    where: nameFilter,
+    where: productFilter,
     select: { id: true, name: true, slug: true, description: true, rating: true, imageUrl: true },
     orderBy: productOrderBy,
   });
@@ -45,7 +48,7 @@ export async function queryProducts(params: {
   const keyGroups = await db.key.groupBy({
     by: ["productId"],
     where: {
-      ...(nameFilter ? { product: nameFilter } : {}),
+      product: productFilter,
       orderId: null,
       OR: [{ reservedUntil: null }, { reservedUntil: { lte: now } }],
     },
@@ -111,12 +114,8 @@ export async function queryProducts(params: {
   let total: number;
   if (withStock) {
     total = merged.length;
-  } else if (search != null && search.length > 0) {
-    total = await db.product.count({
-      where: { name: { contains: search, mode: "insensitive" } },
-    });
   } else {
-    total = await db.product.count();
+    total = await db.product.count({ where: productFilter });
   }
 
   // Paginate

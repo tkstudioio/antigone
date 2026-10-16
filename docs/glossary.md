@@ -20,6 +20,10 @@ same identity as the platform admin, and it signs **in the admin's own browser**
 transaction itself: the server knows only its public key (`ADMIN_PUBKEY`), never a private key.
 → [escrow/dispute.md](./escrow/dispute.md)
 
+**Archived product** — a product the admin took off the storefront (`Product.archivedAt`): it can no
+longer be reserved, bought or restocked, but past orders keep working and it can be listed again. A
+product that ever had keys is archived, never deleted. → [admin.md](./admin.md)
+
 **Arkade-OS** — the implementation of the **Ark** protocol (a Bitcoin layer-2) the escrow is built on.
 It lets funds move instantly and cheaply _on Ark_ (off-chain) while staying anchored to Bitcoin, with
 an _on-chain_ "exit" to Bitcoin L1 as a fallback. In these docs **"on Ark"** means a layer-2

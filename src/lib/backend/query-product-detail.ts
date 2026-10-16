@@ -17,29 +17,43 @@ export type ProductDetail = {
   description: string | null;
   rating: number | null;
   imageUrl: string | null;
+  /** Archived by the admin: still reachable (e.g. from past orders) but not for sale. */
+  archived: boolean;
   stocks: StockEntry[];
 };
 
 export async function queryProductDetail(slug: string): Promise<ProductDetail | null> {
   const productRow = await db.product.findUnique({
     where: { slug },
-    select: { id: true, name: true, slug: true, description: true, rating: true, imageUrl: true },
+    select: {
+      id: true,
+      name: true,
+      slug: true,
+      description: true,
+      rating: true,
+      imageUrl: true,
+      archivedAt: true,
+    },
   });
 
   if (!productRow) return null;
+  const archived = productRow.archivedAt !== null;
 
   const now = new Date();
 
-  const groups = await db.key.groupBy({
-    by: ["sellerPubkey", "price"],
-    where: {
-      productId: productRow.id,
-      orderId: null,
-      OR: [{ reservedUntil: null }, { reservedUntil: { lte: now } }],
-    },
-    _count: { id: true },
-    orderBy: [{ price: "asc" }, { sellerPubkey: "asc" }],
-  });
+  // An archived product sells nothing: no stock groups to show.
+  const groups = archived
+    ? []
+    : await db.key.groupBy({
+        by: ["sellerPubkey", "price"],
+        where: {
+          productId: productRow.id,
+          orderId: null,
+          OR: [{ reservedUntil: null }, { reservedUntil: { lte: now } }],
+        },
+        _count: { id: true },
+        orderBy: [{ price: "asc" }, { sellerPubkey: "asc" }],
+      });
 
   const distinctSellerPubkeys = [...new Set(groups.map((g) => g.sellerPubkey))];
 
@@ -70,6 +84,7 @@ export async function queryProductDetail(slug: string): Promise<ProductDetail | 
     description: productRow.description,
     rating: productRow.rating,
     imageUrl: productRow.imageUrl,
+    archived,
     stocks,
   };
 }

@@ -4,16 +4,21 @@ Endpoints: `src/app/api/stocks/route.ts`, `src/app/api/stocks/[productId]/route.
 `src/app/api/stocks/keys/route.ts`. Backend: `src/lib/backend/mutations-stocks.ts`,
 `query-stocks.ts`.
 
-| Flow                       | Endpoint                      | Backend                                                                     |
-| -------------------------- | ----------------------------- | --------------------------------------------------------------------------- |
-| List own stock             | `GET /api/stocks`             | `queryStockProducts()` (count of available keys + minimum price)            |
-| Tiers of a product         | `GET /api/stocks/[productId]` | `queryStockTiers()` / `queryStockTier()`                                    |
-| Upload keys / create stock | `POST /api/stocks`            | `upsertStockKeys()` — max 1000 codes, **already E2E-encrypted client-side** |
-| Update tier price          | `PATCH /api/stocks`           | `updateStockPrice()` (can merge tiers)                                      |
-| Delete tier                | `DELETE /api/stocks`          | `deleteStock()` — 409 if all are in escrow                                  |
-| Delete specific keys       | `DELETE /api/stocks/keys`     | `deleteKeysFromStock()`                                                     |
+| Flow                       | Endpoint                      | Backend                                                                                                 |
+| -------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------- |
+| List own stock             | `GET /api/stocks`             | `queryStockProducts()` (count of available keys + minimum price)                                        |
+| Tiers of a product         | `GET /api/stocks/[productId]` | `queryStockTiers()` / `queryStockTier()`                                                                |
+| Upload keys / create stock | `POST /api/stocks`            | `upsertStockKeys()` — max 1000 codes, **already E2E-encrypted client-side**; 409 on an archived product |
+| Update tier price          | `PATCH /api/stocks`           | `updateStockPrice()` (can merge tiers)                                                                  |
+| Delete tier                | `DELETE /api/stocks`          | `deleteStock()` — 409 if all are in escrow                                                              |
+| Delete specific keys       | `DELETE /api/stocks/keys`     | `deleteKeysFromStock()`                                                                                 |
 
 Prices are organized into **tiers**: keys of the same product and same price form a tier.
+
+**Archived products.** When the admin archives a product (see [admin.md](../admin.md), Catalog) its
+keys are no longer on sale and `POST /api/stocks` refuses new ones (409). The seller still sees the
+stock: `queryStockProducts()` returns `archived`, the list row shows an «Archived · not on sale»
+badge and the detail page an alert; the keys can still be deleted.
 
 ## Detail page (`stocks/[productSlug]`)
 

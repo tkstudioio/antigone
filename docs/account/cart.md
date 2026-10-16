@@ -15,7 +15,8 @@ Backend: `src/lib/backend/mutations-cart.ts`, `src/lib/backend/query-cart.ts`.
 ## `reserveKeys` (transaction)
 
 Selects the `quantity` keys of the product that are `orderId = null` (not sold) and not reserved (or
-with an expired `reservedUntil`), then claims them with **one conditional `updateMany`** that repeats
+with an expired `reservedUntil`), skipping products archived by the admin (`product.archivedAt = null`),
+then claims them with **one conditional `updateMany`** that repeats
 the availability filter (`orderId = null`, no live reservation) and sets `reservedBy = buyer`,
 `reservedUntil = now + 10 minutes` (`RESERVATION_MINUTES`). The update count must equal `quantity`,
 otherwise the transaction rolls back: two buyers racing for the same key cannot both reserve it.

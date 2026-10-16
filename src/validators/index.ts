@@ -370,3 +370,55 @@ export const concludeDisputeFormSchema = z
     message: "ID chiave duplicati",
     path: ["refundedKeyIds"],
   });
+
+// ─── Admin catalog ───────────────────────────────────────────────────────────
+
+/** URL slug of a product: lowercase letters and digits in single-hyphen-separated runs. */
+export const PRODUCT_SLUG_REGEX = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+/** Bucket key of an image uploaded through `POST /api/admin/products/image`. */
+export const PRODUCT_IMAGE_KEY_REGEX =
+  /^products\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(?:jpg|png|webp|gif)$/;
+
+export const productFieldsSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(2, { message: "The name must be at least 2 characters" })
+    .max(120, { message: "The name must be at most 120 characters" }),
+  slug: z
+    .string()
+    .trim()
+    .min(2, { message: "The slug must be at least 2 characters" })
+    .max(100, { message: "The slug must be at most 100 characters" })
+    .regex(PRODUCT_SLUG_REGEX, {
+      message: "Use lowercase letters, numbers and single hyphens only",
+    }),
+  description: z
+    .string()
+    .trim()
+    .max(5000, { message: "The description must be at most 5,000 characters" })
+    .nullable(),
+  rating: z
+    .number({ error: "The rating must be a number between 0 and 5" })
+    .min(0, { message: "The rating must be a number between 0 and 5" })
+    .max(5, { message: "The rating must be a number between 0 and 5" })
+    .nullable(),
+  /** A bucket key from the image upload, the product's current value (unchanged), or null. */
+  imageUrl: z.string().min(1).max(500).nullable(),
+});
+
+export const createProductSchema = productFieldsSchema;
+
+export const updateProductSchema = productFieldsSchema.extend({
+  id: z.number().int().positive(),
+});
+
+export const archiveProductSchema = z.object({
+  id: z.number().int().positive(),
+  archived: z.boolean(),
+});
+
+export const deleteProductSchema = z.object({
+  id: z.number().int().positive(),
+});

@@ -44,6 +44,9 @@ model Product {
   description String?  @map("description")
   rating      Float?   @map("rating")
   imageUrl    String?  @map("image_url")
+  // Set when the admin archives the product: hidden from the storefront and closed to new stock,
+  // reservations and checkouts, while existing orders keep working. Null = listed.
+  archivedAt  DateTime? @map("archived_at") @db.Timestamp(6)
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamp(6)
 
   keys      Key[]

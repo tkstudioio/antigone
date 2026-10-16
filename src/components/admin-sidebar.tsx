@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
-import { Scale, Wallet } from "lucide-react";
+import { Package, Scale, Wallet } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -25,6 +25,7 @@ import { useWalletStore } from "@/stores/wallet";
 
 const adminLinks = [
   { label: "Disputes", href: "/disputes", icon: Scale },
+  { label: "Catalog", href: "/catalog", icon: Package },
   { label: "Wallet", href: "/wallet", icon: Wallet },
 ];
 
@@ -49,7 +50,7 @@ export function AdminSidebar() {
 
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>Moderation</SidebarGroupLabel>
+          <SidebarGroupLabel>Administration</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {adminLinks.map(({ label, href, icon: Icon }) => (

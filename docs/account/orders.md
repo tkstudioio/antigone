@@ -172,15 +172,16 @@ Before the transaction, the route (`src/app/api/cart/checkout/route.ts`) resolve
 Everything else in a **DB transaction**:
 
 1. Loads the requested `Key`s (the `items` of the payload) that are still sellable
-   (`orderId = null`) and reserved by the buyer with a live reservation (`reservedUntil >= now`, one
-   `now` captured at the start of the transaction). The payload is the **buyer-signed terms** —
+   (`orderId = null`, product not archived) and reserved by the buyer with a live reservation
+   (`reservedUntil >= now`, one `now` captured at the start of the transaction). The payload is the **buyer-signed terms** —
    `items: [{ keyId, sellerPubkey, price }]`, exactly what the cart showed. If a loaded key's price
    or seller differs from its signed item the whole checkout is rejected with **409** (the client
    refetches the cart so the user re-confirms the new price).
 2. **All-or-nothing availability.** If any requested key was not loaded the whole checkout is
    aborted with **409** and the body carries `unavailableKeys: [{ keyId, reason }]`, where `reason`
    is one of `not_found`, `already_sold` (`orderId` set), `reserved_by_other` (reserved by someone
-   else) or `reservation_expired` (no live reservation of the buyer). One extra query classifies the
+   else), `product_archived` (the admin archived the product after the reservation) or
+   `reservation_expired` (no live reservation of the buyer). One extra query classifies the
    missing keys. Nothing is created for the keys that were available.
 3. **Cap on open unpaid orders.** Counts the buyer's `pending` orders whose escrow is
    `awaitingFunds`/`partiallyFunded`; if this request would push it above

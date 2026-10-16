@@ -336,6 +336,11 @@ function StockProductRow({ stock }: { stock: StockProduct }) {
         <div className="min-w-0 space-y-1.5">
           <p className="truncate font-semibold group-hover:underline">{stock.name}</p>
           <div className="flex flex-wrap gap-1.5">
+            {stock.archived && (
+              <Badge variant="outline" action="negative" className="text-xs">
+                Archived · not on sale
+              </Badge>
+            )}
             <Badge variant="outline" action="muted" className="items-center gap-1 text-xs">
               <Layers className="size-3" aria-hidden />
               {stock.priceTiers.toLocaleString("en-US")} {stock.priceTiers === 1 ? "tier" : "tiers"}

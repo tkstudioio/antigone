@@ -18,7 +18,7 @@ The app is organized into **domains**, where a domain is a route group under `sr
 - **`(auth)`** — passwordless authentication via Schnorr challenge–response; key derivation happens client-side only.
 - **`(shop)`** — public storefront: product catalog and detail (the only domain with unauthenticated APIs).
 - **`(account)`** — authenticated user area: cart/reservation, orders, seller stock, Arkade wallet (under `(account)/dashboard`), order chat.
-- **`(admin)`** — platform moderation: disputes and chat, gated on `session.user.isAdmin`.
+- **`(admin)`** — platform moderation (disputes and chat) and product catalog management, gated on `session.user.isAdmin`.
 
 The typical request path is: thin server-component **page** → client **table/component** (`src/components/`) → **hook** (`src/hooks/`) using the `backend` axios client → **API route** (`src/app/api/`) → **backend module** (`src/lib/backend/query-*.ts` for reads, `mutations-*.ts` for writes) → Prisma (`src/db/`). Mutations are signed (`postSigned` → `signedRoute`); reads and writes share Zod schemas in `src/validators/`.
 
@@ -31,7 +31,7 @@ Domains:
 - @docs/auth.md — `(auth)`: passwordless Schnorr auth, session, admin identity
 - @docs/shop.md — `(shop)`: public storefront, catalog, product detail, SEO
 - @docs/account.md — `(account)`: cart, orders, stocks, wallet, order chat
-- @docs/admin.md — `(admin)`: dispute moderation, admin chat, arbiter wallet
+- @docs/admin.md — `(admin)`: dispute moderation, admin chat, product catalog, arbiter wallet
 
 Cross-cutting (shared protocol):
 
@@ -81,7 +81,7 @@ Domain rows link to the `SignedAction` behind them (`Message`, `Order` checkout/
 `src/app/` uses four groups, each with own layout:
 
 - `(auth)` — login, create, restore
-- `(admin)` — admin-only area (disputes, wallet); gated on `session.user.isAdmin`
+- `(admin)` — admin-only area (disputes, catalog, wallet); gated on `session.user.isAdmin`
 - `(account)` — authenticated user area: `cart`, `orders`, `stocks`, and `dashboard` (Arkade SDK wallet, secp256k1 wallet UI)
 - `(shop)` — product browsing
 

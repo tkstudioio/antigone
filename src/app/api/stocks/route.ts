@@ -39,11 +39,18 @@ export const POST = signedRoute({
 
     const productRow = await db.product.findUnique({
       where: { id: productId },
-      select: { id: true, slug: true },
+      select: { id: true, slug: true, archivedAt: true },
     });
 
     if (!productRow) {
       return Response.json({ error: "Product not found" }, { status: 404 });
+    }
+
+    if (productRow.archivedAt !== null) {
+      return Response.json(
+        { error: "This product has been archived and accepts no new stock" },
+        { status: 409 }
+      );
     }
 
     if (codes.length > 1000) {

@@ -8,6 +8,10 @@ Persistence on **PostgreSQL** via Prisma Client (PostgreSQL provider, `@prisma/a
 sale), `KeyCodeKey`, `Favorite`, `Chat`, `Message`, `MessageKey`, `Escrow`, `Order`, `Review`, `SignedAction`. All
 column/table names are snake_case, preserved via `@map`/`@@map`.
 
+- `Product.archivedAt` (nullable) — set when the admin archives the product: off the storefront, no
+  new stock/reservations/checkouts, existing orders untouched. A product can be hard-deleted only if it
+  has no `Key` rows (see [admin.md](./admin.md), Catalog).
+
 ### Key relations
 
 - A `Key` is linked to its escrow **indirectly** through its order:

@@ -1,6 +1,6 @@
 import "server-only";
 
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { randomUUID } from "crypto";
 import { decryptBytes, encryptBytes } from "@/lib/crypto/symmetric";
@@ -77,4 +77,36 @@ export async function getChatObject(key: string): Promise<Buffer> {
   }
   const bytes = await res.Body.transformToByteArray();
   return decryptBytes(Buffer.from(bytes));
+}
+
+/**
+ * Store a product image. Product images are public catalog content, so they are stored in clear
+ * with their real Content-Type and served as-is by the public proxy `GET /api/images/[...key]`.
+ * Returns the bucket key, which is what `Product.imageUrl` holds.
+ */
+export async function putProductObject(params: {
+  body: Buffer;
+  contentType: string;
+  ext: string;
+}): Promise<string> {
+  const { body, contentType, ext } = params;
+  const key = `products/${randomUUID()}.${ext}`;
+
+  await getS3Client().send(
+    new PutObjectCommand({ Bucket: getBucket(), Key: key, Body: body, ContentType: contentType })
+  );
+
+  return key;
+}
+
+/**
+ * Best-effort removal of a product image that is no longer referenced (replaced or product
+ * deleted). A failure only leaves an orphan object behind, so it is logged and swallowed.
+ */
+export async function deleteProductObject(key: string): Promise<void> {
+  try {
+    await getS3Client().send(new DeleteObjectCommand({ Bucket: getBucket(), Key: key }));
+  } catch (err) {
+    console.error(`Could not delete product image ${key}`, err);
+  }
 }
