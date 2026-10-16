@@ -43,7 +43,7 @@ export function CartDetail() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-8 pb-16">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div className="space-y-2">
           <span className="font-mono text-xs tracking-widest text-muted-foreground uppercase">
             Buyer

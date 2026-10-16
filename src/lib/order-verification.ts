@@ -128,7 +128,8 @@ function verifyTerms(order: OrderDetail, role: Role): OrderVerification["terms"]
     items.push(signed);
     total += signed.price;
   }
-  if (total !== order.totalSats) {
+  // A cancelled order has released its keys back on sale, so it legitimately lists no items.
+  if (order.status !== "cancelled" && total !== order.totalSats) {
     return tampered("The order total differs from the buyer-signed terms");
   }
   if (!Number.isInteger(order.platformFee) || order.platformFee < 0) {

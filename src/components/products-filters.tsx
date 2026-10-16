@@ -68,7 +68,7 @@ export function ProductsFilters() {
       <div className="flex flex-wrap items-center gap-4 lg:ml-auto">
         <SegmentedControl
           aria-label="Sort by"
-          className="flex-1 sm:flex-none"
+          className="min-w-fit flex-1 sm:flex-none"
           value={query.sort}
           onValueChange={(value) => {
             const option = sortOptions.find((o) => o.value === value);

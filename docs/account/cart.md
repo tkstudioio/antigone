@@ -66,7 +66,8 @@ dashed-border empty state (CTA to `/products`) and the populated view. Layout mi
   includes the dust threshold) is computed at checkout, see [orders.md](./orders.md).
 - **Checkout.** The header holds "Continue to checkout" (primary) and "Browse more". The primary opens
   `CheckoutDialog` (`src/components/checkout-dialog.tsx`), mounted by `CartDetail` with the `open` state
-  it owns.
+  it owns. A successful confirmation closes the dialog (the cart is empty by then); an arbiter change
+  hands over to `ArbiterChangeDialog`.
 - **Cart sheet.** `cart-sheet.tsx` (`CartSheet`, storefront header) opens the same cart as a
   `Sheet` from the right (`w-full`, `sm:max-w-md`). The trigger shows the item count as an
   `aria-hidden` badge (`99+` cap) with the count in its `aria-label`, plus a sibling `sr-only`

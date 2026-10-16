@@ -155,7 +155,7 @@ export function SendDialog() {
                 <InputGroup>
                   <InputGroupInput
                     id="send-destination"
-                    placeholder="Ark, Bitcoin, BIP21 or Lightning address..."
+                    placeholder="Address or BIP21 URI"
                     value={destination}
                     onChange={(e) => setDestination(e.target.value)}
                     aria-invalid={!parsed && !!destination.trim()}

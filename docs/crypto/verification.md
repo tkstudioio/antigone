@@ -80,7 +80,8 @@ every order fetch. Result: `OrderDetailView.verification`.
 - **Terms.** The checkout payload is `items: [{ keyId, sellerPubkey, price }]` — what the buyer saw. The
   server answers **409** if any price/seller changed (the cart is refetched and the user re-confirms).
   Buyer **and** seller verify the order against that signed body: every order key is in the signed items
-  with the same seller and price, `totalSats` equals the signed sum, `escrow.price = total + platformFee`,
+  with the same seller and price, `totalSats` equals the signed sum (skipped for a `cancelled` order,
+  whose keys went back on sale so it lists no items), `escrow.price = total + platformFee`,
   escrow buyer/seller are the signer / signed seller, and the escrow address **re-derives locally** from
   its params. The viewer's role comes from **their own key**, never from the server's `role`.
 - **Lifecycle actions.** `confirm` (`/confirm` or `/deliver`, signed by the seller), `dispute` (signed by

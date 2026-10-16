@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { toast } from "react-toastify";
 import { Loader2, X } from "lucide-react";
 import {
@@ -123,6 +123,8 @@ export function CheckoutDialog({ open, onOpenChange }: Props) {
       } else {
         toast.success("Order confirmed");
       }
+      // The cart is now empty: closing avoids leaving a zero-total dialog behind.
+      onOpenChange(false);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Error during checkout");
     }
@@ -141,8 +143,8 @@ export function CheckoutDialog({ open, onOpenChange }: Props) {
           </DialogHeader>
 
           {orders.map((order) => (
-            <>
-              <Card key={order.sellerPubkey} variant={"ghost"}>
+            <Fragment key={order.sellerPubkey}>
+              <Card variant={"ghost"}>
                 <CardHeader className="px-0!">
                   <CardTitle>{order.sellerUsername}</CardTitle>
                 </CardHeader>
@@ -179,7 +181,7 @@ export function CheckoutDialog({ open, onOpenChange }: Props) {
                 </CardContent>
               </Card>
               <Separator />
-            </>
+            </Fragment>
           ))}
 
           <div className="flex justify-between items-center">

@@ -28,7 +28,9 @@ export function OrderStepper({ orderStatus, escrowStatus, role }: Props) {
           <AlertTriangle className="size-4 shrink-0" />
           <span>{timeline.disputeLabel}</span>
         </div>
-        <p className="text-sm text-muted-foreground">{timeline.nextAction}</p>
+        {timeline.nextAction !== timeline.disputeLabel && (
+          <p className="text-sm text-muted-foreground">{timeline.nextAction}</p>
+        )}
       </div>
     );
   }

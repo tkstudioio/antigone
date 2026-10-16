@@ -35,7 +35,7 @@ export function OrderVerificationBanner({ verification, onReviewArbiter }: Props
       {verification.blocked && (
         <Alert action="negative">
           <TriangleAlert />
-          <AlertTitle>⚠ Unverified — possibly tampered by the server</AlertTitle>
+          <AlertTitle>Unverified — possibly tampered by the server</AlertTitle>
           <AlertDescription>
             <p>{verification.blocked}</p>
             {failures.length > 0 && (

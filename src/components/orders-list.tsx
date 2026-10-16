@@ -156,7 +156,7 @@ export function OrdersList({ role }: { role: OrderRole }) {
 
   return (
     <div className="mx-auto max-w-5xl space-y-8 pb-16">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div className="space-y-2">
           <span className="font-mono text-xs tracking-widest text-muted-foreground uppercase">
             {config.eyebrow}
@@ -306,7 +306,7 @@ function OrderRow({ row, counterpartyLabel }: { row: OrderListRow; counterpartyL
   return (
     <Link
       href={`/orders/${row.id}`}
-      className="group flex flex-col gap-4 p-4 outline-none transition-colors hover:bg-muted/50 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:ring-inset sm:flex-row sm:items-center sm:p-5"
+      className="group flex flex-col gap-4 p-4 outline-none transition-colors hover:bg-muted/50 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:ring-inset lg:flex-row lg:items-center sm:p-5"
     >
       <div className="min-w-0 flex-1 space-y-1.5">
         <div className="flex min-w-0 items-center gap-2">
@@ -326,7 +326,7 @@ function OrderRow({ row, counterpartyLabel }: { row: OrderListRow; counterpartyL
         </p>
       </div>
 
-      <dl className="grid grid-cols-2 items-center gap-4 text-sm sm:w-80 sm:shrink-0">
+      <dl className="grid grid-cols-2 items-center gap-4 text-sm lg:w-80 lg:shrink-0">
         <div className="space-y-1.5">
           <dt className="text-xs text-muted-foreground">Total</dt>
           <dd className="flex items-center font-semibold tabular-nums">
@@ -345,7 +345,7 @@ function OrderRow({ row, counterpartyLabel }: { row: OrderListRow; counterpartyL
         </div>
       </dl>
 
-      <div className="flex items-center gap-3 sm:w-32 sm:shrink-0 sm:justify-end">
+      <div className="flex items-center gap-3 lg:w-32 lg:shrink-0 lg:justify-end">
         <Badge {...statusBadge} className="shrink-0">
           {statusLabel}
         </Badge>
@@ -362,13 +362,13 @@ function OrderRowsSkeleton() {
   return (
     <Card className="space-y-0 divide-y py-0" aria-busy aria-label="Loading orders">
       {Array.from({ length: 5 }).map((_, index) => (
-        <div key={index} className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:p-5">
+        <div key={index} className="flex flex-col gap-4 p-4 lg:flex-row lg:items-center sm:p-5">
           <div className="flex-1 space-y-2">
             <Skeleton className="h-5 w-2/5" />
             <Skeleton className="h-4 w-1/4" />
           </div>
-          <Skeleton className="h-10 sm:w-80" />
-          <Skeleton className="h-6 sm:w-32" />
+          <Skeleton className="h-10 lg:w-80" />
+          <Skeleton className="h-6 lg:w-32" />
         </div>
       ))}
     </Card>

@@ -169,7 +169,8 @@ admin chat (`useAdminChat`) every 10s while it is open.
 
 ## Wallet
 
-The `(admin)/wallet` page. It reuses the shared component `src/components/wallet-overview.tsx` (the same
+The `(admin)/wallet` page (an «Arbiter» eyebrow, the `Wallet` H1 and a one-line intro, like the account
+dashboard). It reuses the shared component `src/components/wallet-overview.tsx` (the same
 as [account.md](./account.md)): balance, send/receive, history. It is **entirely client-side** and
 account-agnostic — it reads from the global stores/hooks (`useProfileStore`, `useWalletBalance`/
 `useWalletTransactions`/`useSendPayment`). Since the admin logs in with the identity whose pubkey is

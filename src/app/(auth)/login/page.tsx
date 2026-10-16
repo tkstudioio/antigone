@@ -16,7 +16,7 @@ export default function LoginPage() {
   const accounts = useAccountsList();
 
   return (
-    <div className="w-full space-y-8">
+    <div className="flex w-full flex-col gap-8">
       <div className="space-y-2">
         <H1 className="text-3xl">Sign in</H1>
         <P className="text-pretty text-muted-foreground">
