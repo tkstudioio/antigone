@@ -48,7 +48,7 @@ export default async function Homepage() {
       <section className="relative isolate grid items-center overflow-x-clip gap-12 py-8 lg:grid-cols-2 lg:py-16">
         <div
           aria-hidden
-          className="pointer-events-none absolute -top-24 left-1/2 -z-10 size-[28rem] -translate-x-1/2 rounded-full bg-primary/40 blur-3xl lg:left-1/4"
+          className="pointer-events-none absolute top-0 left-1/2 -z-10 size-72 -translate-x-1/2 sm:size-[28rem] rounded-full bg-primary/40 blur-3xl lg:left-1/4"
         />
         <div className="space-y-8">
           <span className="inline-flex items-center gap-2 rounded-full border px-3 py-1 font-mono text-xs text-muted-foreground">
