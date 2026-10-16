@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSessionRoute } from "@/lib/auth/session";
 import { db } from "@/db";
-import { getChatObject } from "@/lib/storage/minio";
+import { getChatObject } from "@/lib/storage/s3";
 import { mayAdminReadOrder } from "@/lib/backend/dispute-access";
 
 export async function GET(

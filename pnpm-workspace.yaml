@@ -1,0 +1,22 @@
+# pnpm settings. Since pnpm 11 these no longer live in the "pnpm" field of package.json.
+# This project is not a monorepo: the file exists only to carry the settings below.
+
+# Dependency postinstall scripts are blocked by default; only these are allowed to run.
+# @prisma/engines + prisma download the query engine (needed by `prisma generate`),
+# esbuild and unrs-resolver fetch their platform-native binaries (tsx and ESLint).
+allowBuilds:
+  "@prisma/engines": true
+  prisma: true
+  esbuild: true
+  unrs-resolver: true
+
+# Security pins for transitive dependencies whose own range still resolves to a vulnerable
+# version: source-map-js (DoS, via next > postcss) and baseline-browser-mapping (DoS, via next).
+# Drop an entry once the parent package requires the patched version itself.
+overrides:
+  source-map-js: ^1.2.2
+  baseline-browser-mapping: ^2.11.0
+  # @arkade-os/boltz-swap hard-pins @arkade-os/sdk 0.4.62 while the app uses 0.4.79. Under pnpm's
+  # isolated layout that means two SDK copies with incompatible types (and two sets of escrow /
+  # signing primitives at runtime). Collapse them onto the version the app is built against.
+  "@arkade-os/sdk": 0.4.79

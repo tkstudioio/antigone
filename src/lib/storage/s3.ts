@@ -15,28 +15,25 @@ export function getEnv(name: string): string {
   return value;
 }
 
+/** Any S3-compatible store: MinIO in local dev, Cloudflare R2 on Vercel. */
 export function getS3Client(): S3Client {
-  const endpoint = getEnv("MINIO_ENDPOINT");
-  const port = getEnv("MINIO_PORT");
-  const accessKeyId = getEnv("MINIO_ACCESS_KEY");
-  const secretAccessKey = getEnv("MINIO_SECRET_KEY");
-  const region = getEnv("MINIO_REGION");
-  const useSsl = process.env.MINIO_USE_SSL === "true";
-
   return new S3Client({
-    endpoint: `${useSsl ? "https" : "http"}://${endpoint}:${port}`,
-    region,
-    credentials: { accessKeyId, secretAccessKey },
+    endpoint: getEnv("S3_ENDPOINT"),
+    region: getEnv("S3_REGION"),
+    credentials: {
+      accessKeyId: getEnv("S3_ACCESS_KEY_ID"),
+      secretAccessKey: getEnv("S3_SECRET_ACCESS_KEY"),
+    },
     forcePathStyle: true,
   });
 }
 
 export function getBucket(): string {
-  return getEnv("MINIO_BUCKET");
+  return getEnv("S3_BUCKET");
 }
 
 /**
- * Store a chat attachment. The bytes are encrypted at rest (AES-256-GCM) before they reach MinIO,
+ * Store a chat attachment. The bytes are encrypted at rest (AES-256-GCM) before they reach the store,
  * so neither the object store nor anyone with raw bucket access can read them. The stored object's
  * Content-Type is generic (`application/octet-stream`) since the payload is ciphertext; the real
  * MIME type lives in the DB and is applied when streaming back through {@link getChatObject}.
@@ -48,7 +45,7 @@ export async function putChatObject(params: {
   ext: string;
 }): Promise<string> {
   const { chatId, body, ext } = params;
-  const bucket = getEnv("MINIO_BUCKET");
+  const bucket = getBucket();
   const key = `chat/${chatId}/${randomUUID()}.${ext}`;
 
   const client = getS3Client();
@@ -71,12 +68,12 @@ export async function putChatObject(params: {
  * Legacy plaintext objects (pre-encryption) are returned unchanged by `decryptBytes`.
  */
 export async function getChatObject(key: string): Promise<Buffer> {
-  const bucket = getEnv("MINIO_BUCKET");
+  const bucket = getBucket();
   const client = getS3Client();
 
   const res = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
   if (!res.Body) {
-    throw new Error(`Oggetto allegato non trovato: ${key}`);
+    throw new Error(`Attachment object not found: ${key}`);
   }
   const bytes = await res.Body.transformToByteArray();
   return decryptBytes(Buffer.from(bytes));

@@ -42,6 +42,10 @@ export async function verifyEscrowFunding(params: {
   const { funded, total } = await getEscrowFunding(escrow.address, escrow.price);
 
   let escrowStatus = escrow.status;
+  // A cancelled order's keys were put back on sale: a late payment must not revive its escrow.
+  if (orderRow.status === "cancelled") {
+    return { ok: true, funded, total, escrowStatus };
+  }
   if (funded && (escrow.status === "awaitingFunds" || escrow.status === "partiallyFunded")) {
     await db.escrow.update({
       where: { address: escrow.address },
@@ -142,6 +146,7 @@ export async function confirmOrder(params: {
   if (!orderRow) return { error: "Order not found", status: 404 };
   if (orderRow.status === "completed") return { error: "Order already completed", status: 409 };
   if (orderRow.status === "disputed") return { error: "Order is in dispute", status: 409 };
+  if (orderRow.status === "cancelled") return { error: "Order cancelled", status: 409 };
   if (!orderRow.escrowAddress) return { error: "Escrow missing", status: 409 };
 
   const escrow = await db.escrow.findUnique({ where: { address: orderRow.escrowAddress } });

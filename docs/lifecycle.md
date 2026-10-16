@@ -30,12 +30,22 @@ The transitions actually wired today:
 stateDiagram-v2
     [*] --> pending: checkout
     pending --> completed: seller confirms
+    pending --> cancelled: payment TTL elapsed (cron) or cancel by buyer/seller<br/>(only with the escrow unfunded)
     pending --> disputed: open dispute
     completed --> disputed: open dispute
     disputed --> concluded: admin verdict (+ refund)
     concluded --> concluded: admin overrides verdict<br/>(while escrow still disputed)
     completed --> [*]
+    cancelled --> [*]
 ```
+
+**`pending -> cancelled`.** An unpaid order is cancelled automatically once `ORDER_PAYMENT_TTL_MINUTES`
+(default 45) have passed since checkout, or on request by the buyer (any time) or the seller (after
+the TTL) through `POST /api/orders/[id]/cancel` — in every case **only if the Ark indexer reports no
+funds locked in the escrow**. The keys go back on sale and the chat is closed. The escrow
+deliberately **stays `awaitingFunds`** (no new escrow status; a dead escrow is identified by its order
+being `cancelled`). `cancelled` is therefore no longer an unreachable status. Detail in
+[account/orders.md](./account/orders.md).
 
 The conclusion is **not terminal at the order level**: as long as the escrow is `disputed` or
 `settlementPrepared` (the arbiter has not co-signed yet, funds still unspent), the admin can
@@ -53,7 +63,7 @@ by `concludeOrderAsAdmin` only if the escrow was never funded, otherwise by
 ```mermaid
 stateDiagram-v2
     [*] --> awaitingFunds: checkout
-    awaitingFunds --> fundLocked: buyer pays (funds verified)
+    awaitingFunds --> fundLocked: buyer pays (funds verified by the buyer's browser<br/>or promoted by the expiry sweeper)
     fundLocked --> sellerReady: seller prepares release
     sellerReady --> buyerCheckpointsSigned: buyer collaborates
     buyerCheckpointsSigned --> completed: seller cashes out
@@ -93,6 +103,7 @@ How the two records line up at each milestone:
 | Milestone                | Order       | Escrow                                                                         |
 | ------------------------ | ----------- | ------------------------------------------------------------------------------ |
 | Checkout                 | `pending`   | `awaitingFunds`                                                                |
+| Unpaid order cancelled   | `cancelled` | stays `awaitingFunds` (dead escrow, never funded)                              |
 | Seller confirms          | `completed` | `fundLocked` (until the release starts)                                        |
 | Dispute concluded        | `concluded` | stays `disputed` if funded (settlement pending); else `completed` / `refunded` |
 | Favoured party prepared  | `concluded` | `settlementPrepared` (awaiting the arbiter's co-signature)                     |

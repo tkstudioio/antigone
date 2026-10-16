@@ -17,17 +17,32 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   return (
     <SidebarProvider>
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-50 focus:rounded-sm focus:bg-background focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:ring-3 focus:ring-ring/50"
+      >
+        Skip to main content
+      </a>
       <AppSidebar />
       <SidebarInset>
-        <header className="sticky top-0 z-40 w-full bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/60">
-          <div className="container mx-auto flex items-center justify-between px-4 py-4">
-            <Link href="/" className="visible md:invisible">
+        {/* Mobile only: on desktop the sidebar is always visible and carries the logo. */}
+        <header className="sticky top-0 z-40 w-full border-b bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/60 md:hidden">
+          <div className="flex items-center justify-between px-4 py-3">
+            <Link
+              href="/"
+              aria-label="Antigone — home"
+              className="rounded-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+            >
               <Icon className="h-8" />
             </Link>
-            <SidebarTrigger className="md:hidden" />
+            <SidebarTrigger />
           </div>
         </header>
-        <main className="container mx-auto px-4 mt-4 space-y-8">{children}</main>
+        {/* Capped and centred on the inset's own width: `container` follows viewport breakpoints,
+            which ignore the sidebar's width. Pages narrower than the cap centre themselves too. */}
+        <main id="main" className="mx-auto w-full max-w-6xl space-y-8 px-4 py-8 md:px-8 md:py-10">
+          {children}
+        </main>
       </SidebarInset>
     </SidebarProvider>
   );

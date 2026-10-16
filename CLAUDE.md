@@ -46,19 +46,21 @@ Cross-cutting (shared protocol):
 ## Commands
 
 ```bash
-yarn dev              # Next dev server
-yarn build            # prisma generate + prisma migrate deploy + next build
-yarn lint             # ESLint (flat config, eslint.config.mjs)
-yarn format           # prettier --write . (also runs on staged files via lint-staged/husky)
-yarn db:generate      # Prisma: regenerate typed client from schema.prisma
-yarn db:migrate       # Prisma: apply pending migrations (prisma migrate deploy)
-yarn db:migrate:dev   # Prisma: create + apply new migration in development
-yarn db:seed          # tsx src/db/seed.ts — sample products
-yarn db:anti-seed     # tsx src/db/anti-seed.ts — tear down dev data
-yarn derive:pubkey    # local only: DERIVE_MNEMONIC/DERIVE_PASSPHRASE env → ADMIN_PUBKEY
+pnpm dev              # Next dev server
+pnpm build            # prisma generate + prisma migrate deploy + next build
+pnpm lint             # ESLint (flat config, eslint.config.mjs)
+pnpm format           # prettier --write . (also runs on staged files via lint-staged/husky)
+pnpm db:generate      # Prisma: regenerate typed client from schema.prisma
+pnpm db:migrate       # Prisma: apply pending migrations (prisma migrate deploy)
+pnpm db:migrate:dev   # Prisma: create + apply new migration in development
+pnpm db:seed          # tsx src/db/seed.ts — sample products
+pnpm db:anti-seed     # tsx src/db/anti-seed.ts — tear down dev data
+pnpm derive:pubkey    # local only: DERIVE_MNEMONIC/DERIVE_PASSPHRASE env → ADMIN_PUBKEY
 ```
 
-Node `v22.22.2` (`.nvmrc`). Package manager: yarn.
+Node `v22.22.2` (`.nvmrc`). Package manager: **pnpm** (pinned via the `packageManager` field; settings
+live in `pnpm-workspace.yaml`, not in `package.json`). Dependency build scripts are blocked unless
+listed under `allowBuilds`, and `minimumReleaseAge` holds back packages published in the last 24h.
 
 ## Architecture
 
@@ -72,7 +74,7 @@ Domain rows link to the `SignedAction` behind them (`Message`, `Order` checkout/
 
 ### Admin identity
 
-`ADMIN_PUBKEY` (server-only env, a **public** key: 33-byte compressed secp256k1, hex) identifies the platform admin: `isAdmin` = session pubkey equals it, and it is the escrow arbiter pubkey at checkout. The server **never holds the admin's mnemonic or private key** — the arbiter co-signs dispute settlements in the admin's own browser. Derive the value locally with `yarn derive:pubkey`. Omit/invalid → admin disabled. → `docs/auth.md` (Admin identity), `docs/escrow/dispute.md`.
+`ADMIN_PUBKEY` (server-only env, a **public** key: 33-byte compressed secp256k1, hex) identifies the platform admin: `isAdmin` = session pubkey equals it, and it is the escrow arbiter pubkey at checkout. The server **never holds the admin's mnemonic or private key** — the arbiter co-signs dispute settlements in the admin's own browser. Derive the value locally with `pnpm derive:pubkey`. Omit/invalid → admin disabled. → `docs/auth.md` (Admin identity), `docs/escrow/dispute.md`.
 
 ### Route groups
 
@@ -83,7 +85,7 @@ Domain rows link to the `SignedAction` behind them (`Message`, `Order` checkout/
 - `(account)` — authenticated user area: `cart`, `orders`, `stocks`, and `dashboard` (Arkade SDK wallet, secp256k1 wallet UI)
 - `(shop)` — product browsing
 
-API routes live under `src/app/api/`: `auth/{challenge,register,[...nextauth]}`, plus `admin`, `cart`, `chat`, `chats`, `orders`, `products`, `stocks`, and `images/[...key]` (public proxy for product images only — chat attachments under prefix `chat/` return 404 and are served exclusively via the authenticated `GET /api/chat/[id]/attachment/[messageId]` route).
+API routes live under `src/app/api/`: `auth/{challenge,register,[...nextauth]}`, plus `admin`, `cart`, `chat`, `chats`, `internal` (cron-only, e.g. `expire-orders`), `orders`, `products`, `stocks`, and `images/[...key]` (public proxy for product images only — chat attachments under prefix `chat/` return 404 and are served exclusively via the authenticated `GET /api/chat/[id]/attachment/[messageId]` route).
 
 ### Data layer
 
@@ -106,7 +108,18 @@ Authoritative skill: `.claude/skills/fe-patterns/SKILL.md`. Read it before build
 - **English is the only language for everything** — UI strings, code, comments, identifiers, and documentation. The project is international; never introduce Italian (or any other language) in user-facing text or code. Numbers `toLocaleString("en-US")`. Null → `"—"`.
 - **Prices are in satoshi (integer, no decimals).** Always use `formatPrice()` from `src/lib/utils.ts` — outputs `"1,234 sats"` via `Intl.NumberFormat("en-US")`. Never use `€` or float formatting for prices.
 
-UI primitives: shadcn (`style: radix-vega`, base `neutral`, lucide icons) in `src/components/ui/`. Aliases: `@/components`, `@/lib`, `@/hooks`, `@/components/ui`.
+UI primitives: shadcn (`style: radix-vega`, base `neutral`, lucide icons) in `src/components/ui/`. Theme
+colors in `src/app/globals.css` come from the TKStudio Design System (Figma) primitives — each value is
+commented with the primitive it resolves to; only the existing variables are used, none added.
+Typography (loaded with `next/font` in `src/app/layout.tsx`): Noto Sans for the UI (`font-sans`), Noto
+Sans Mono for pubkeys/addresses/txids (`font-mono`), Cinzel for display headings only — `H1`, section
+`h2`s, hero (`font-serif`, `font-semibold`). Never use Cinzel for numbers, amounts or body text (it has no
+true lowercase).
+Brand marks: `Logo` (`src/components/ui/logo.tsx`; `variant` `wordmark` = ANT▮GONE with the Rubin-vessel
+mark as the I, or `lockup` = mark + ANTIGONE; `currentColor`) and `Icon` (`icon.tsx`; the vessel in
+negative on a theme-aware tile). Text is outlined Cinzel, so no font dependency. Static copies in
+`public/` (`logo.svg`, `logo-lockup.svg`, `logo-mark.svg`, `icon.svg`); favicon `src/app/icon.svg` +
+`apple-icon.png`. Aliases: `@/components`, `@/lib`, `@/hooks`, `@/components/ui`.
 
 ### Providers
 
@@ -126,12 +139,15 @@ Zod schemas in `src/validators/index.ts`. Reused on both client (form validation
 Required (see `.env.example` + `.env.local`):
 
 - `NEXTAUTH_URL`, `NEXTAUTH_SECRET` — auth-options throws at import time if `NEXTAUTH_SECRET` missing.
-- `ADMIN_PUBKEY` — server-only, public: the admin's compressed pubkey (hex). The admin must log in with the identity (mnemonic + passphrase) behind it. Never put the admin mnemonic/passphrase on the server; derive the value locally with `yarn derive:pubkey`. Omit/invalid disables admin. → `docs/auth.md`.
+- `ADMIN_PUBKEY` — server-only, public: the admin's compressed pubkey (hex). The admin must log in with the identity (mnemonic + passphrase) behind it. Never put the admin mnemonic/passphrase on the server; derive the value locally with `pnpm derive:pubkey`. Omit/invalid disables admin. → `docs/auth.md`.
 - `NEXT_PUBLIC_ARK_OPERATOR_URL`, `NEXT_PUBLIC_BOLTZ_SWAP_PROVIDER` — Arkade wallet runtime.
 - `DATABASE_URL` — required. Points to the PostgreSQL instance (`docker compose up -d postgres` uses the value in `.env.example`).
 - `ENCRYPTION_KEY` — server-only, 32-byte base64. Encrypts **chat attachments** at rest (AES-256-GCM); license codes do not use it (they are E2E-encrypted in the browser). Protects against DB/storage compromise, not a compromised app server.
 
-- `MINIO_*` / `NEXT_PUBLIC_MINIO_URL` — S3-compatible storage (MinIO) for chat attachments (dispute evidence). Objects are stored encrypted at rest; the app proxies and decrypts chat attachment downloads through `GET /api/chat/[id]/attachment/[messageId]` (no presigned URLs). Storage client lives in `src/lib/storage`.
+- `CRON_SECRET` — server-only bearer token for `GET /api/internal/expire-orders` (Vercel Cron sends it as `Authorization: Bearer …`); the route refuses to run when unset.
+- `ORDER_PAYMENT_TTL_MINUTES` (default 45) — minutes a buyer has to pay before an unpaid order can expire/be cancelled by the seller. `MAX_RESERVED_KEYS_PER_ACCOUNT` (default 50) and `MAX_PENDING_ORDERS_PER_ACCOUNT` (default 10) — per-account caps on cart reservations and open unpaid orders. → `docs/account/orders.md`.
+
+- `S3_ENDPOINT`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_BUCKET` — server-only, any S3-compatible store (MinIO via docker compose locally, Cloudflare R2 on Vercel) for chat attachments (dispute evidence) and product images. Chat objects are stored encrypted at rest; the app proxies and decrypts chat attachment downloads through `GET /api/chat/[id]/attachment/[messageId]` (no presigned URLs). Storage client in `src/lib/storage/s3.ts`.
 
 ## .claude tooling
 
@@ -139,3 +155,13 @@ Required (see `.env.example` + `.env.local`):
 - `skills/fe-patterns` — frontend list/table patterns (rigid; see above).
 - `skills/{shadcn-ui,tanstack-query,react-hook-form,conventional-commit-message-generator}` — domain skills.
 - `tasks/` — planner output; agent reads from here when executing a task.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

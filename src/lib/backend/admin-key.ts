@@ -10,7 +10,7 @@ import { hex } from "@scure/base";
  * `isAdmin` check, the escrow arbiter pubkey at checkout, and the recipient of the dispute chat
  * re-encryption. The server never holds the matching private key: the arbiter signs dispute
  * settlements in the admin's own browser (see `src/lib/ark/dispute.ts`). Instance operators derive
- * the value locally with `yarn derive:pubkey`.
+ * the value locally with `pnpm derive:pubkey`.
  *
  * Memoized (the env does not change at runtime). Returns null — admin disabled — when the variable
  * is missing or is not a valid compressed point; the problem is logged once.

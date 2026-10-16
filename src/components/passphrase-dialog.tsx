@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, LockKeyhole } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Field, FieldError, FieldLabel } from "@/components/ui/field";
+import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
 
 type PassphraseDialogProps = {
   open: boolean;
@@ -57,9 +57,17 @@ function PassphraseForm({
         onSubmit(passphrase);
       }}
     >
-      <DialogHeader>
-        <DialogTitle>{title}</DialogTitle>
-        {description && <DialogDescription>{description}</DialogDescription>}
+      <DialogHeader className="gap-4">
+        <span
+          aria-hidden
+          className="flex size-10 items-center justify-center rounded-md bg-primary text-primary-foreground [&_svg]:size-5"
+        >
+          <LockKeyhole />
+        </span>
+        <div className="space-y-1">
+          <DialogTitle>{title}</DialogTitle>
+          {description && <DialogDescription>{description}</DialogDescription>}
+        </div>
       </DialogHeader>
 
       <Field data-invalid={Boolean(error)}>
@@ -74,14 +82,19 @@ function PassphraseForm({
           autoComplete="off"
           autoFocus
         />
-        {error && <FieldError errors={[{ message: error }]} />}
+        {error ? (
+          <FieldError errors={[{ message: error }]} />
+        ) : (
+          <FieldDescription>It is checked on this device and never sent anywhere.</FieldDescription>
+        )}
       </Field>
 
-      <DialogFooter>
+      <DialogFooter className="gap-2">
         {secondaryLabel && onSecondary && (
           <Button
             type="button"
             variant="ghost"
+            action="muted"
             className="font-semibold"
             disabled={pending}
             onClick={onSecondary}
@@ -119,7 +132,7 @@ export function PassphraseDialog({
         onOpenChange(next);
       }}
     >
-      <DialogContent showCloseButton={dismissable}>
+      <DialogContent showCloseButton={dismissable} className="max-w-[calc(100%-2rem)] sm:max-w-md">
         <PassphraseForm {...formProps} submitLabel={submitLabel} pending={pending} />
       </DialogContent>
     </Dialog>

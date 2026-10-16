@@ -4,21 +4,23 @@ Order management as buyer and seller. The **Ark mechanics** (contract, funding, 
 fees) live in the [escrow/](../escrow.md) tree; here the application path and the checkout. For the
 state overview see [lifecycle.md](../lifecycle.md).
 
-| Flow                                  | Endpoint                                          | Backend                                                                                                                                                                    |
-| ------------------------------------- | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Checkout                              | `POST /api/cart/checkout`                         | `processCheckout()` (`mutations-checkout.ts`)                                                                                                                              |
-| Order list                            | `GET /api/orders?role=buying\|selling`            | `queryOrders()`                                                                                                                                                            |
-| Order detail                          | `GET /api/orders/[id]`                            | `queryOrderDetail()`                                                                                                                                                       |
-| Escrow funding (live, read-only) ²    | `GET /api/orders/[id]/funding`                    | `readEscrowFunding()` (`query-orders.ts`) — **not used by the UI**                                                                                                         |
-| Verify funding ¹                      | `POST /api/orders/[id]/verify-funding`            | `verifyEscrowFunding()` (`mutations-orders.ts`)                                                                                                                            |
-| Confirm = deliver keys (seller) ¹     | `POST /api/orders/[id]/confirm`                   | `confirmOrder()` — body `{ keys: [{ keyId, wrappedCek }] }`                                                                                                                |
-| Deliver keys in a dispute (seller) ¹  | `POST /api/orders/[id]/deliver`                   | `deliverOrderKeys()` (pending/disputed, no status change)                                                                                                                  |
-| Share keys with the arbiter (party) ¹ | `POST /api/orders/[id]/grant-arbiter-keys`        | `grantArbiterKeys()` (dispute only)                                                                                                                                        |
-| Prepare release (seller)              | `POST /api/orders/[id]/release/prepare`           | `prepareRelease()`                                                                                                                                                         |
-| Collaborate (buyer)                   | `POST /api/orders/[id]/release/collaborate`       | `collaborateRelease()`                                                                                                                                                     |
-| Cash out (seller)                     | `POST /api/orders/[id]/release/finalize`          | `finalizeRelease()`                                                                                                                                                        |
-| Open dispute (both)                   | `POST /api/orders/[id]/dispute`                   | `openDispute()`                                                                                                                                                            |
-| Settle dispute (favoured party)       | `POST /api/orders/[id]/settle/{prepare,finalize}` | `prepareDisputeSettlement()` / `finalizeDisputeSettlement()` — the arbiter's step is `POST /api/admin/disputes/[id]/cosign`, see [escrow/dispute.md](../escrow/dispute.md) |
+| Flow                                                | Endpoint                                          | Backend                                                                                                                                                                    |
+| --------------------------------------------------- | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Checkout                                            | `POST /api/cart/checkout`                         | `processCheckout()` (`mutations-checkout.ts`)                                                                                                                              |
+| Order list                                          | `GET /api/orders?role=buying\|selling`            | `queryOrders()`                                                                                                                                                            |
+| Order detail                                        | `GET /api/orders/[id]`                            | `queryOrderDetail()`                                                                                                                                                       |
+| Escrow funding (live, read-only) ²                  | `GET /api/orders/[id]/funding`                    | `readEscrowFunding()` (`query-orders.ts`) — **not used by the UI**                                                                                                         |
+| Verify funding ¹                                    | `POST /api/orders/[id]/verify-funding`            | `verifyEscrowFunding()` (`mutations-orders.ts`)                                                                                                                            |
+| Confirm = deliver keys (seller) ¹                   | `POST /api/orders/[id]/confirm`                   | `confirmOrder()` — body `{ keys: [{ keyId, wrappedCek }] }`                                                                                                                |
+| Deliver keys in a dispute (seller) ¹                | `POST /api/orders/[id]/deliver`                   | `deliverOrderKeys()` (pending/disputed, no status change)                                                                                                                  |
+| Share keys with the arbiter (party) ¹               | `POST /api/orders/[id]/grant-arbiter-keys`        | `grantArbiterKeys()` (dispute only)                                                                                                                                        |
+| Prepare release (seller)                            | `POST /api/orders/[id]/release/prepare`           | `prepareRelease()`                                                                                                                                                         |
+| Collaborate (buyer)                                 | `POST /api/orders/[id]/release/collaborate`       | `collaborateRelease()`                                                                                                                                                     |
+| Cash out (seller)                                   | `POST /api/orders/[id]/release/finalize`          | `finalizeRelease()`                                                                                                                                                        |
+| Cancel unpaid order (buyer; seller after the TTL) ¹ | `POST /api/orders/[id]/cancel`                    | `cancelUnpaidOrder()` (`mutations-order-expiry.ts`) behind the route's indexer funding gate                                                                                |
+| Expire unpaid orders (cron)                         | `GET /api/internal/expire-orders`                 | `sweepExpiredOrders()` (`mutations-order-expiry.ts`) — `Authorization: Bearer $CRON_SECRET`, not signed                                                                    |
+| Open dispute (both)                                 | `POST /api/orders/[id]/dispute`                   | `openDispute()`                                                                                                                                                            |
+| Settle dispute (favoured party)                     | `POST /api/orders/[id]/settle/{prepare,finalize}` | `prepareDisputeSettlement()` / `finalizeDisputeSettlement()` — the arbiter's step is `POST /api/admin/disputes/[id]/cosign`, see [escrow/dispute.md](../escrow/dispute.md) |
 
 > ¹ Mutations wrapped in `signedRoute` (like all the other POST/PATCH/DELETE): the client sends the
 > `x-antigone-signature`/`-timestamp`/`-nonce` headers over the body hash; without a valid signature the
@@ -34,15 +36,52 @@ state overview see [lifecycle.md](../lifecycle.md).
 
 ## List pages — `(account)/orders/{buying,selling}`
 
-The two pages are **thin server components** (`H1` title "My purchases" / "My sales") that mount the
-same shared client component `src/components/orders-list.tsx` with `role="buyer"` or `role="seller"`.
-`OrdersList` owns the page state (`useQueryStates`), `useOrders({ role, page })`, the react-query
-`match()`, the skeleton, the parametric empty state (icon/CTA per role) and the pagination.
+The two pages are **thin server components** that only mount the shared client component
+`src/components/orders-list.tsx` with `role="buyer"` or `role="seller"`. The header (eyebrow, `H1`,
+description) lives in the client module, because the role copy carries lucide icon components that
+cannot cross the server/client boundary.
 
-The listing is a **list of cards** (not a table): each order is a full-width card, clickable toward
-`/orders/[id]`. Row 1: `#id` + name of the first product + `+N` badge (extra items) + **status** badge
-(`ORDER_STATUS_LABELS`/`ORDER_STATUS_BADGE`). Row 2: counterparty (`Seller`/`Buyer` according to the
-role) + **total** in sats (`formatPrice`) + **date of last activity**.
+**Role config.** `ORDERS_LIST_CONFIG: Record<OrderRole, OrdersListConfig>` holds all role-specific
+content: `eyebrow`, `title`, `description`, `counterpartyLabel` (`Seller`/`Buyer`), `searchLabel` and
+`empty: { icon, title, description, ctaLabel, ctaHref }` and an optional
+`headerAction: { label, href, icon }`. `OrdersList` never branches on the role, so each role is tuned
+by editing its entry only.
+
+**Header action.** Like `(account)/stocks`, the header pairs the title block with a primary `Button`
+(`w-full` on mobile, `sm:w-auto`, right-aligned): buyers get «Browse products» (`/products`), sellers
+get «Manage stock» (`/stocks`), so each page has a path to its counterpart area besides the sidebar.
+
+**Seller copy.** The selling page uses eyebrow `Seller`, title `Sales` (the sidebar label) and a
+description about orders buyers placed on the seller's stock. Search is labelled «Search buyer
+username». Its empty state cannot tell «no stock listed» from «no buyers yet», so it only says orders
+on the seller's stock will appear here and points to `/stocks` («Manage your stock»).
+
+**Layout (same house style as `(account)/stocks`).** Container `max-w-5xl space-y-8 pb-16`; header;
+toolbar; a result count (`N orders`); then one `Card` wrapping a `<ul className="divide-y">` of rows.
+Each row is a single `Link` to `/orders/[id]` with hover, inset `focus-visible` ring and a
+`ChevronRight` that nudges on hover. State lives in a single `useQueryStates` call
+(`page`, `sort`, `dir`, `search`); every filter change resets `page` to 1.
+
+**Toolbar.** An `InputGroup` search (debounced with `useDebounceValue`, compared as
+`debouncedInput === query.search`, with an inline clear button), a `SegmentedControl` sort pairing
+`sort` + `dir` (Recent = `lastActivity` desc, Amount = `totalSats` desc, Status = `status` asc) and a
+`Clear` button shown when anything differs from the defaults. `search` matches the **counterparty
+username only** (seller for buyers, buyer for sellers) and is labelled that way. There is **no status
+filter** server-side, so none is offered.
+
+**Row anatomy.** Left: `#id` (mono), first product name (truncated), a `+N` badge for extra items
+(with an `sr-only` "and N more items"), and the counterparty (`Seller: …`/`Buyer: …`). Middle: a `dl`
+with `Total` (`Satoshi` icon + `formatPrice`, `sr-only` " sats") and `Last activity` (a `<time>` with
+the absolute date, full date-time in `title`). Right: the status `Badge`
+(`ORDER_STATUS_LABELS`/`ORDER_STATUS_BADGE`), always in the same column.
+
+**States.** Loading: a row-shaped skeleton inside the same `Card`/`divide-y` (`aria-busy`,
+`aria-label="Loading orders"`). Empty: a dashed-border block with a `size-10` icon tile, a
+`font-semibold` title (not a heading — the page has a single `H1`), a one-line explanation and the
+role CTA; with an active search it reads "No orders found" without a CTA. Pagination: a
+`nav aria-label="Pagination"` with Previous/Next chevrons and `Page X of Y`
+(`totalPages = Math.max(1, Math.ceil(total / pageSize))`), shown only when there is more than one page.
+The list still refetches every 15s through `useOrders`.
 
 **Sorting by last activity.** `queryOrders`'s default sort is `lastActivity` desc (most recent on
 top). There is no `updatedAt` column: `lastActivityAt` is derived as
@@ -132,23 +171,32 @@ Before the transaction, the route (`src/app/api/cart/checkout/route.ts`) resolve
 (Arkade operator, admin pubkey, `exitDelay`) — detail in [escrow/contract.md](../escrow/contract.md).
 Everything else in a **DB transaction**:
 
-1. Loads the requested `Key`s (the `items` of the payload) with the seller. The payload is the
-   **buyer-signed terms** — `items: [{ keyId, sellerPubkey, price }]`, exactly what the cart showed.
-   If a loaded key's price or seller differs from its signed item the whole checkout is rejected with
-   **409** (the client refetches the cart so the user re-confirms the new price).
-2. Filters availability; each discarded key is marked with a reason: `not_found`, `own_key` (the
-   buyer's own key), `already_sold` (`orderId` set), `reserved_by_other`, `reservation_expired`.
-3. Groups the available keys by `sellerPubkey` → **creates a separate `Order` for each seller**
+1. Loads the requested `Key`s (the `items` of the payload) that are still sellable
+   (`orderId = null`) and reserved by the buyer with a live reservation (`reservedUntil >= now`, one
+   `now` captured at the start of the transaction). The payload is the **buyer-signed terms** —
+   `items: [{ keyId, sellerPubkey, price }]`, exactly what the cart showed. If a loaded key's price
+   or seller differs from its signed item the whole checkout is rejected with **409** (the client
+   refetches the cart so the user re-confirms the new price).
+2. **All-or-nothing availability.** If any requested key was not loaded the whole checkout is
+   aborted with **409** and the body carries `unavailableKeys: [{ keyId, reason }]`, where `reason`
+   is one of `not_found`, `already_sold` (`orderId` set), `reserved_by_other` (reserved by someone
+   else) or `reservation_expired` (no live reservation of the buyer). One extra query classifies the
+   missing keys. Nothing is created for the keys that were available.
+3. **Cap on open unpaid orders.** Counts the buyer's `pending` orders whose escrow is
+   `awaitingFunds`/`partiallyFunded`; if this request would push it above
+   `MAX_PENDING_ORDERS_PER_ACCOUNT` (default 10) → **409**, nothing created.
+4. Groups the keys by `sellerPubkey` → **creates a separate `Order` for each seller**
    (`status: pending`, `totalSats` = sum of prices, `checkoutActionId` = the signed checkout, shared by
    all the orders of the request).
-4. Attaches the keys to the order (`orderId`) and clears the reservation.
-5. **For each order, creates the Arkade-OS escrow**: derives the address with `deriveEscrowAddress()`,
+5. Attaches each group's keys to its order with a **conditional** `updateMany`
+   (`orderId = null`, `reservedBy = buyer`, `reservedUntil >= now`) and asserts that the update count
+   equals the group size; clears the reservation.
+6. **For each order, creates the Arkade-OS escrow**: derives the address with `deriveEscrowAddress()`,
    creates the order's `Chat` (reusing the checkout signature as `Chat.signature`), creates the
    `Escrow` row (`status: awaitingFunds`, `serverPubkey` = operator, `arbiterPubkey` = admin,
    `price` = `totalSats + platformFee`, `exitDelay`, `nonce`), and sets `Order.escrowAddress`.
-6. Response `{ orders, unavailableKeys }`; each order includes an `escrow` descriptor (`address`,
-   `sellerPubkey`, `arbiterPubkey`, `serverPubkey`, `exitDelay`, `nonce`, `price`). If no key is
-   available → 409.
+7. Response `{ orders }`; each order includes an `escrow` descriptor (`address`, `sellerPubkey`,
+   `arbiterPubkey`, `serverPubkey`, `exitDelay`, `nonce`, `price`).
 
 The platform fee (1% surcharge on the buyer) is detailed in [escrow/fees.md](../escrow/fees.md).
 
@@ -159,8 +207,72 @@ checked against the TOFU pin (a different arbiter blocks payment and opens the w
 signed checkout body lists all the buyer's items, so each seller receives the buyer's full signed terms
 (see the privacy note in [crypto/verification.md](../crypto/verification.md)).
 
-> ⚠️ **Race condition**: Prisma does not expose `SELECT ... FOR UPDATE`; serialization is best-effort
-> (see the comment in `mutations-checkout.ts`).
+**Guarantee: a key is sold at most once, and a checkout is atomic.** Two concurrent checkouts can
+never both claim the same key: every claim is a conditional `UPDATE` that repeats the availability
+filter, and its row count is asserted. In PostgreSQL `READ COMMITTED` an `UPDATE` that blocks on a row
+re-evaluates its `WHERE` clause against the updated row once the lock is released, so a key already
+claimed by a concurrent committed checkout no longer matches and the count falls short. Any shortfall
+throws inside the transaction and **rolls back the entire request** — no partial orders and no
+orphan escrow — answered with **409** and `unavailableKeys`. No `FOR UPDATE` and no `Serializable`
+isolation are needed.
+
+## Unpaid order expiry
+
+An order whose escrow is still `awaitingFunds`/`partiallyFunded` after
+`ORDER_PAYMENT_TTL_MINUTES` (default **45**) from its `createdAt` can be cancelled, which puts its
+keys back on sale. `queryOrderDetail` exposes the deadline as `paymentExpiresAt` (ISO string,
+`createdAt` + TTL), non-null **only** while the order is `pending` and the escrow is
+`awaitingFunds`/`partiallyFunded`, `null` otherwise.
+
+**The funding gate (critical).** The `awaitingFunds -> fundLocked` promotion is client-driven
+(`verifyEscrowFunding` is only called from the buyer's browser), so an order in `awaitingFunds`
+**may already be paid on Ark**. Nothing is ever cancelled without asking the Ark indexer first
+(`getEscrowFunding`, server-side, never inside a DB transaction):
+
+| Indexer reading                | Sweeper                                                      | Manual cancel route |
+| ------------------------------ | ------------------------------------------------------------ | ------------------- |
+| Funded (`total >= price`)      | **Promotes** the escrow to `fundLocked` (conditional update) | 409                 |
+| Partially funded (`0 < total`) | Touches nothing, counts `skipped`, logs: a human must look   | 409                 |
+| Nothing locked (`total === 0`) | **Cancels** the order                                        | Cancels the order   |
+| Indexer unreachable            | Fail closed: skips, counts `errors`, retried on the next run | 503                 |
+
+**Cancellation** (`cancelUnpaidOrder()`): one transaction, every write conditional. The order moves
+`pending -> cancelled` (`updateMany` on `status: pending`; if someone else moved it first → 409, no
+side effects), its keys get `orderId`/`reservedBy`/`reservedUntil` cleared (back on sale), and the
+order chat is closed with an English system message saying the order was cancelled automatically / by
+the buyer / by the seller because the payment was not received. The escrow is deliberately **left in
+`awaitingFunds`**: no new escrow status exists, the dead escrow is identified by its order being
+`cancelled`. Two guards stop a late payment from reviving it: `verifyEscrowFunding` never promotes the
+escrow of a `cancelled` order, and `confirmOrder` rejects it with 409 ("Order cancelled").
+
+**Who can cancel** (`POST /api/orders/[id]/cancel`, signed, body `{ orderId }` must equal the URL id →
+400 otherwise): the **buyer** at any time while the escrow is unfunded; the **seller** only once the
+TTL has elapsed (403 before); a non-party gets 403; a non-`pending` order or an already-funded escrow
+→ 409.
+
+**The sweeper.** `sweepExpiredOrders({ limit = 100 })` selects `pending` orders with an unfunded
+escrow older than the TTL (oldest first) and applies the table above. It also counts in `expiringSoon`
+(and logs) every queried escrow whose batch expiry is within `EXPIRY_WARNING_WINDOW_MS` (3 days) —
+observability only, no state change. It returns `{ scanned, cancelled, promoted, expiringSoon,
+skipped, errors }`. It runs once a day (03:00 UTC — the Hobby plan only allows daily crons) from Vercel Cron (`vercel.json` →
+`GET /api/internal/expire-orders`) and manually with `pnpm orders:expire`. The route is deliberately a
+**GET** (Vercel Cron only issues GETs, and a GET stays outside the signed-mutation gate of
+`src/proxy.ts`); it authenticates with `Authorization: Bearer $CRON_SECRET` (constant-time compare;
+401 on mismatch, 500 if `CRON_SECRET` is unset — it never runs unauthenticated).
+
+**Per-account caps.** `MAX_RESERVED_KEYS_PER_ACCOUNT` (default 50, enforced in `reserveKeys`, see
+[cart.md](./cart.md)) and `MAX_PENDING_ORDERS_PER_ACCOUNT` (default 10, enforced at checkout). Those
+two and `ORDER_PAYMENT_TTL_MINUTES` live together in `src/lib/backend/limits.ts`, the anti-abuse
+limits of the buying flow: each is read defensively from env and an absent or invalid value falls
+back to the default.
+
+**UI.** The order detail shows the buyer the payment deadline and a **"Cancel order"** action next to
+**"Pay"** while the order is awaiting payment; the seller gets the same action once the TTL has
+elapsed. Open dispute is now one shared **"Open dispute"** affordance driven by `canOpenDispute()`
+(`src/lib/escrow-status.ts`, the same predicate `OrderDisputePanel` uses), so the buyer can open a
+dispute also while the escrow is `sellerReady` — i.e. right after the keys are delivered, which is
+when an invalid code is discovered. Like every other action it stays visible but disabled while the
+order fails verification.
 
 ## Payment (with confirmation)
 

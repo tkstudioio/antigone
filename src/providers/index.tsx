@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
 import { Session } from "next-auth";
 import { SessionProvider } from "next-auth/react";
+import { ThemeProvider } from "next-themes";
 import { ToastContainer } from "react-toastify";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
@@ -21,16 +22,18 @@ export function AppProviders({
   const [queryClient] = useState(() => new QueryClient());
 
   return (
-    <SessionProvider session={session}>
-      <QueryClientProvider client={queryClient}>
-        <NuqsAdapter>
-          <TooltipProvider>
-            <WalletAutoReconnect />
-            {children}
-            <ToastContainer />
-          </TooltipProvider>
-        </NuqsAdapter>
-      </QueryClientProvider>
-    </SessionProvider>
+    <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
+      <SessionProvider session={session}>
+        <QueryClientProvider client={queryClient}>
+          <NuqsAdapter>
+            <TooltipProvider>
+              <WalletAutoReconnect />
+              {children}
+              <ToastContainer />
+            </TooltipProvider>
+          </NuqsAdapter>
+        </QueryClientProvider>
+      </SessionProvider>
+    </ThemeProvider>
   );
 }

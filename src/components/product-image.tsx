@@ -1,16 +1,5 @@
-const BUCKET = process.env.NEXT_PUBLIC_MINIO_BUCKET;
-
+/** Absolute URLs and root paths are used as-is; anything else is a bucket key served by `/api/images`. */
 export function toProxySrc(src: string): string {
-  if (src.startsWith("/")) return src;
-  if (src.startsWith("http")) {
-    try {
-      const url = new URL(src);
-      const segments = url.pathname.split("/").filter(Boolean);
-      if (segments[0] === BUCKET) {
-        return `/api/images/${segments.slice(1).join("/")}`;
-      }
-    } catch {}
-    return src;
-  }
+  if (src.startsWith("/") || src.startsWith("http")) return src;
   return `/api/images/${src}`;
 }

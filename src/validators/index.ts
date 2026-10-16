@@ -113,12 +113,12 @@ export const createStockSchema = z.object({
  * The `productId` and `price` are already known from the form context.
  */
 export const createStockFormSchema = z.object({
-  productId: z.number().int().positive(),
+  productId: z.number().int().positive({ error: "Select a product" }),
   price: z
-    .number({ error: "Il prezzo deve essere un intero positivo" })
-    .int({ error: "Il prezzo deve essere un intero positivo" })
-    .positive({ error: "Il prezzo deve essere un intero positivo" }),
-  keysText: z.string().min(1, { message: "Inserisci almeno una chiave" }),
+    .number({ error: "Price must be a positive integer" })
+    .int({ error: "Price must be a positive integer" })
+    .positive({ error: "Price must be a positive integer" }),
+  keysText: z.string().min(1, { message: "Enter at least one key" }),
 });
 
 export const updateStockPriceSchema = z
@@ -218,6 +218,11 @@ export const grantArbiterKeysSchema = z.object({ keys: keyCodeWrapsSchema });
 
 /** Buyer or seller triggers a re-check of escrow funding against the indexer. */
 export const verifyFundingSchema = z.object({});
+
+/** Buyer (or seller after the payment deadline) cancels an unpaid order. */
+export const cancelOrderSchema = z.object({
+  orderId: z.number().int().positive(),
+});
 
 /** Buyer or seller escalates the order to a dispute. */
 export const openDisputeSchema = z.object({});

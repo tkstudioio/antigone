@@ -21,7 +21,8 @@ type Props = {
   className?: string;
 };
 
-function formatExpiry(expiresAt: number): string {
+/** House format for a deadline shown next to an escrow (also reused by the order actions panel). */
+export function formatExpiry(expiresAt: number): string {
   return new Date(expiresAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
 }
 

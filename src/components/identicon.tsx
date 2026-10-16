@@ -13,10 +13,12 @@ export function Identicon({
   size?: number;
   className?: string;
 }) {
-  // The `size-full` class keeps the generated <svg> from being squashed by a
-  // parent's `[&_svg:not([class*='size-'])]:size-4` rule (e.g. shadcn Button).
+  // An inline size keeps the generated <svg> from being squashed by a parent's descendant rule
+  // (shadcn Button's `[&_svg:not([class*='size-'])]:size-4`, SidebarMenuButton's `[&_svg]:size-4`):
+  // inline styles beat any class selector, whatever its specificity.
   const svg = useMemo(
-    () => toSvg(value, size).replace("<svg", '<svg class="size-full"'),
+    () =>
+      toSvg(value, size).replace("<svg", '<svg class="size-full" style="width:100%;height:100%"'),
     [value, size]
   );
 

@@ -1,6 +1,5 @@
 import { backend } from "@/lib/backend";
-import { useInfiniteQuery } from "@tanstack/react-query";
-import type { InfiniteData } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 
 export type Product = {
   id: number;
@@ -24,34 +23,19 @@ export type ProductsResponse = {
 export type SortColumn = "name" | "price" | "rating";
 export type SortDir = "asc" | "desc";
 
+// First page only: the storefront list is paginated server-side, this serves search pickers.
 export function useProducts(
   params: Partial<{
     sort: SortColumn;
     dir: SortDir;
     search: string;
     withStock: boolean;
-  }>,
-  initialData?: ProductsResponse
+  }>
 ) {
-  // Cast initialData to the InfiniteData shape or undefined.
-  // Using `as InfiniteData<...> | undefined` prevents TypeScript from picking
-  // the "definedInitialData" overload of useInfiniteQuery, which would narrow
-  // isPending/data types and break ts-pattern exhaustiveness checking.
-  const seedData: InfiniteData<ProductsResponse, number> | undefined = initialData
-    ? { pages: [initialData], pageParams: [1] }
-    : undefined;
-
-  return useInfiniteQuery({
+  return useQuery({
     queryKey: ["products", params],
-    queryFn: ({ pageParam }) =>
-      backend
-        .get<ProductsResponse>("/products", { params: { ...params, page: pageParam } })
-        .then((r) => r.data),
-    initialPageParam: 1,
-    getNextPageParam: (lastPage, allPages) => {
-      const fetched = allPages.length * lastPage.pageSize;
-      return fetched < lastPage.total ? allPages.length + 1 : undefined;
-    },
-    initialData: seedData,
+    queryFn: () => backend.get<ProductsResponse>("/products", { params }).then((r) => r.data),
+    // Keep showing the previous results while a new search loads.
+    placeholderData: keepPreviousData,
   });
 }

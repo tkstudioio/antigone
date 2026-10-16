@@ -1,8 +1,15 @@
 import "server-only";
 
 import { db } from "@/db";
+import { MAX_RESERVED_KEYS_PER_ACCOUNT } from "@/lib/backend/limits";
 
 const RESERVATION_MINUTES = 10;
+
+/** Not enough sellable keys matched the request (or a concurrent reservation took them). */
+export class NotEnoughKeysError extends Error {}
+
+/** The reservation would exceed {@link MAX_RESERVED_KEYS_PER_ACCOUNT}. */
+export class ReservationCapError extends Error {}
 
 export async function reserveKeys(params: {
   buyerPubkey: string;
@@ -33,17 +40,36 @@ export async function reserveKeys(params: {
     });
 
     if (candidates.length < quantity) {
-      throw new Error(`Not enough keys: available ${candidates.length}, requested ${quantity}`);
+      throw new NotEnoughKeysError(
+        `Not enough keys: available ${candidates.length}, requested ${quantity}`
+      );
     }
 
-    for (const { id } of candidates) {
-      await tx.key.update({
-        where: { id },
-        data: { reservedBy: buyerPubkey, reservedUntil: expiresAt },
-      });
+    // Per-account cap on live reservations (counted inside the same transaction).
+    const alreadyReserved = await tx.key.count({
+      where: { reservedBy: buyerPubkey, orderId: null, reservedUntil: { gte: now } },
+    });
+    if (alreadyReserved + quantity > MAX_RESERVED_KEYS_PER_ACCOUNT) {
+      throw new ReservationCapError(
+        `Reservation limit exceeded: at most ${MAX_RESERVED_KEYS_PER_ACCOUNT} keys can be reserved at once (you hold ${alreadyReserved})`
+      );
     }
 
-    return { reserved: candidates.length, expiresAt };
+    // Conditional claim: the availability filter is repeated in the UPDATE, so a key taken by a
+    // concurrent reservation between the read above and this write simply does not match.
+    const claimed = await tx.key.updateMany({
+      where: {
+        id: { in: candidates.map(({ id }) => id) },
+        orderId: null,
+        OR: [{ reservedUntil: null }, { reservedUntil: { lte: now } }],
+      },
+      data: { reservedBy: buyerPubkey, reservedUntil: expiresAt },
+    });
+    if (claimed.count !== quantity) {
+      throw new NotEnoughKeysError("Some keys were just taken by another buyer, please try again");
+    }
+
+    return { reserved: claimed.count, expiresAt };
   });
 }
 

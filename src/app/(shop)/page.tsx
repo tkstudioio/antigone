@@ -1,155 +1,244 @@
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { H1, Large, P } from "@/components/ui/typography";
+import Link from "next/link";
+import { getServerSession } from "next-auth";
 import {
+  ArrowRight,
+  ArrowUpFromLine,
   Fingerprint,
   KeyRound,
-  Bitcoin,
-  UserPlus,
-  ShoppingCart,
-  PackageCheck,
-  ShieldCheck,
   Lock,
+  LockKeyhole,
+  PackageCheck,
   Scale,
+  ShieldCheck,
+  ShoppingCart,
+  UserPlus,
+  Wallet,
   Zap,
-  ArrowUpFromLine,
 } from "lucide-react";
-import Link from "next/link";
+
+import { authOptions } from "@/lib/auth-options";
+import { queryProducts } from "@/lib/backend/query-products";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { H1, P } from "@/components/ui/typography";
+import { Satoshi } from "@/components/icons/satoshi";
+import { ProductTile } from "@/components/product-tile";
+
+const FEATURED_COUNT = 4;
 
 export default async function Homepage() {
+  const [session, products] = await Promise.all([
+    getServerSession(authOptions),
+    queryProducts({ withStock: true, pageSize: 100 }),
+  ]);
+
+  // Best-rated in-stock products first; unrated ones go last.
+  const featured = [...products.data]
+    .sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0))
+    .slice(0, FEATURED_COUNT);
+
+  const secondaryCta = session
+    ? { href: "/stocks", label: "Sell your keys" }
+    : { href: "/create", label: "Create your key" };
+
   return (
-    <div className="space-y-16 pb-16">
+    <div className="space-y-24 pb-24">
       {/* Hero */}
-      <section className="flex flex-col items-center gap-8 py-16 text-center">
-        <div className="max-w-lg space-y-4">
-          <H1 className="text-balance text-5xl">Buy and sell digital products in full privacy</H1>
-          <P className="text-pretty text-lg text-muted-foreground">
-            A peer-to-peer marketplace for license keys and digital goods. No email, no password —
-            just your key. Every order is protected by Bitcoin escrow.
+      <section className="relative isolate grid items-center overflow-x-clip gap-12 py-8 lg:grid-cols-2 lg:py-16">
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -top-24 left-1/2 -z-10 size-[28rem] -translate-x-1/2 rounded-full bg-primary/40 blur-3xl lg:left-1/4"
+        />
+        <div className="space-y-8">
+          <span className="inline-flex items-center gap-2 rounded-full border px-3 py-1 font-mono text-xs text-muted-foreground">
+            <span className="size-1.5 rounded-full bg-positive" aria-hidden />
+            Bitcoin · Ark escrow · No passwords
+          </span>
+          <H1 className="text-5xl leading-tight text-balance lg:text-6xl">
+            Trade license keys without trusting anyone.
+          </H1>
+          <P className="max-w-xl text-lg text-pretty text-muted-foreground">
+            A peer-to-peer marketplace where your identity is a key you hold, every payment waits in
+            an escrow no single party can move, and your browser verifies what the server tells it.
           </P>
+          <div className="flex flex-col gap-4 sm:flex-row">
+            <Button size="lg" asChild>
+              <Link href="/products">
+                Browse catalog
+                <ArrowRight />
+              </Link>
+            </Button>
+            <Button size="lg" variant="outline" asChild>
+              <Link href={secondaryCta.href}>{secondaryCta.label}</Link>
+            </Button>
+          </div>
         </div>
-        <div className="flex w-full max-w-md flex-col gap-4 sm:flex-row">
-          <Button size="lg" asChild className="flex-1">
-            <Link href="/products">Browse catalog</Link>
-          </Button>
-          <Button size="lg" variant="outline" asChild className="flex-1">
-            <Link href="/login">Start selling</Link>
-          </Button>
-        </div>
+        <EscrowIllustration />
       </section>
 
-      {/* What it is */}
-      <section className="space-y-8">
+      {/* Featured listings */}
+      {featured.length > 0 && (
+        <section aria-labelledby="featured-heading" className="space-y-8">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <SectionHeading
+              id="featured-heading"
+              eyebrow="In stock now"
+              title="Top-rated in the catalog"
+            />
+            <Button variant="ghost" action="muted" asChild>
+              <Link href="/products">
+                View all products
+                <ArrowRight />
+              </Link>
+            </Button>
+          </div>
+          <ul className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            {featured.map((product) => (
+              <li key={product.id}>
+                <ProductTile product={product} />
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {/* Principles */}
+      <section aria-labelledby="principles-heading" className="space-y-8">
         <SectionHeading
-          eyebrow="What it is"
-          title="A marketplace built around your keys"
-          subtitle="Antigone connects buyers and sellers of digital products without ever asking for personal data. Your identity is a cryptographic key you control — nothing more."
+          id="principles-heading"
+          eyebrow="Why Antigone"
+          title="Built so you never have to take our word for it"
+          subtitle="The platform is designed around one assumption: the server could be wrong, or worse. Everything that matters is enforced by cryptography, in your browser."
         />
-        <div className="grid gap-4 sm:grid-cols-3">
-          <Feature
+        <div className="grid gap-4 md:grid-cols-2">
+          <Principle
             icon={<Fingerprint />}
-            title="Passwordless identity"
-            description="Sign in with a Schnorr signature derived from your recovery phrase. No accounts to leak, nothing to phish."
+            title="Your key is your account"
+            description="No email, no password, nothing to leak. You sign in by signing a challenge; your recovery phrase and passphrase never leave your browser."
           />
-          <Feature
+          <Principle
+            icon={<Lock />}
+            title="An escrow nobody controls alone"
+            description="Every order gets its own escrow on Ark, a Bitcoin layer-2. Buyer, seller, arbiter, operator: none of them can move the funds alone."
+          />
+          <Principle
             icon={<KeyRound />}
-            title="Digital goods"
-            description="Buy and sell software license keys and digital products, delivered instantly the moment payment clears."
+            title="Codes only you can read"
+            description="License codes and chat messages are end-to-end encrypted to the people in the trade. The server stores ciphertext it cannot open."
           />
-          <Feature
-            icon={<Bitcoin />}
-            title="Bitcoin native"
-            description="Prices and payments are denominated in satoshi, settled over the Arkade network for fast, low-fee transfers."
+          <Principle
+            icon={<ShieldCheck />}
+            title="Don't trust, verify"
+            description="Your browser re-checks every signature, price and verdict the server returns. If anything was tampered with, paying and signing are blocked."
           />
         </div>
       </section>
 
-      {/* How it works */}
-      <section className="space-y-8">
+      {/* How a trade works */}
+      <section aria-labelledby="how-heading" className="space-y-8">
         <SectionHeading
-          eyebrow="How it works"
-          title="From key to delivery in three steps"
-          subtitle="No onboarding forms, no waiting. Create your key in the browser and start trading right away."
+          id="how-heading"
+          eyebrow="How a trade works"
+          title="From your key to your code in five steps"
+          subtitle="No sign-up form and no waiting. Your sats move only when both sides agree."
         />
-        <div className="grid gap-4 sm:grid-cols-3">
+        <ol className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
           <Step
             step={1}
             icon={<UserPlus />}
             title="Create your key"
-            description="Generate a recovery phrase locally. It derives your identity and your wallet — and never leaves your browser."
+            description="A recovery phrase plus your passphrase derive your identity, in the browser. The server only sees your public key."
           />
           <Step
             step={2}
             icon={<ShoppingCart />}
-            title="Reserve & pay"
-            description="Add products to your cart, reserve them, and pay in satoshi. Funds go straight into escrow."
+            title="Reserve"
+            description="Add keys to your cart: they are held for you for 10 minutes while you check out."
           />
           <Step
             step={3}
-            icon={<PackageCheck />}
-            title="Receive instantly"
-            description="The license key is released to you on payment. Confirm delivery and the seller gets paid."
+            icon={<LockKeyhole />}
+            title="Pay into escrow"
+            description="Checkout opens one escrow per seller. Your sats are locked there, not sent to the seller."
           />
+          <Step
+            step={4}
+            icon={<PackageCheck />}
+            title="Receive the code"
+            description="The seller confirms and encrypts the license code to your key. Only you can read it."
+          />
+          <Step
+            step={5}
+            icon={<Wallet />}
+            title="Release"
+            description="You and the seller co-sign the release. The seller is paid and the trade is done."
+          />
+        </ol>
+        <div className="flex flex-col gap-4 rounded-md border border-dashed p-6 sm:flex-row sm:items-start">
+          <IconChip icon={<Scale />} />
+          <div className="space-y-1">
+            <p className="font-semibold">Something went wrong?</p>
+            <P className="text-pretty text-muted-foreground">
+              Either side can open a dispute. The admin reviews the order and rules a verdict, but
+              still cannot take the funds: the party ruled in favour settles the escrow, with the
+              arbiter co-signing from their own browser.
+            </P>
+          </div>
         </div>
       </section>
 
-      {/* Funding */}
-      <section className="space-y-8">
+      {/* Wallet */}
+      <section
+        aria-labelledby="wallet-heading"
+        className="grid gap-8 lg:grid-cols-2 lg:items-center"
+      >
         <SectionHeading
-          eyebrow="Your funds"
-          title="Top up or cash out whenever you want"
-          subtitle="Your balance is always yours to move. Add or withdraw funds at any time, with no lock-up and no intermediary holding your money."
+          id="wallet-heading"
+          eyebrow="Your wallet"
+          title="Your sats stay yours"
+          subtitle="A built-in Arkade wallet, derived from the same key you sign in with. No custodian, no lock-up: move funds in and out whenever you want."
         />
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Feature
+        <Card className="divide-y space-y-0 py-0">
+          <WalletRow
             icon={<Zap />}
-            title="Lightning swap"
-            description="Move funds in and out instantly over the Lightning Network — ideal for everyday amounts, settled in seconds."
+            title="Instant Ark transfers"
+            description="Pay escrows and send to any Ark address off-chain, in seconds, for a tiny fee."
           />
-          <Feature
+          <WalletRow
             icon={<ArrowUpFromLine />}
             title="On-chain offboard"
-            description="Withdraw straight to any Bitcoin address with an on-chain offboard whenever you want to settle on the base layer."
+            description="Withdraw to any Bitcoin address whenever you want to settle on the base layer."
           />
-        </div>
+          <WalletRow
+            icon={<Satoshi />}
+            title="Priced in satoshi"
+            description="Every price is a whole number of sats. No fiat conversion, no decimals, no surprises."
+          />
+        </Card>
       </section>
 
-      {/* Escrow */}
+      {/* Closing CTA */}
       <section>
-        <Card className="space-y-8 p-8">
-          <SectionHeading
-            eyebrow="Escrow"
-            title="Every trade is protected"
-            subtitle="Payments are never sent directly to the seller. They are locked in a Bitcoin escrow until the buyer receives the goods — protecting both sides of the trade."
+        <Card className="relative isolate space-y-0 px-6 py-12 text-center sm:px-12">
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-0 -z-10 bg-linear-to-b from-primary/30 to-transparent"
           />
-          <div className="grid gap-4 sm:grid-cols-3">
-            <Feature
-              variant="ghost"
-              icon={<Lock />}
-              title="Funds held safely"
-              description="When you pay, satoshi are held in a secured escrow address instead of going straight to the seller."
-            />
-            <Feature
-              variant="ghost"
-              icon={<ShieldCheck />}
-              title="Released on delivery"
-              description="The seller is paid only once the order is fulfilled and delivery is confirmed by the buyer."
-            />
-            <Feature
-              variant="ghost"
-              icon={<Scale />}
-              title="Disputes resolved"
-              description="If something goes wrong, the order chat and platform moderation step in to settle the dispute fairly."
-            />
-          </div>
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <Large>Ready to trade with confidence?</Large>
-            <div className="flex gap-4">
-              <Button asChild>
+          <div className="mx-auto max-w-xl space-y-6">
+            <h2 className="font-serif text-3xl font-semibold text-balance">
+              Ready to trade on your own terms?
+            </h2>
+            <P className="text-pretty text-muted-foreground">
+              Browse the catalog without an account. When you are ready to buy or sell, create your
+              key in seconds.
+            </P>
+            <div className="flex flex-col justify-center gap-4 sm:flex-row">
+              <Button size="lg" asChild>
                 <Link href="/products">Browse catalog</Link>
               </Button>
-              <Button variant="outline" asChild>
-                <Link href="/login">Get started</Link>
+              <Button size="lg" variant="outline" asChild>
+                <Link href={secondaryCta.href}>{secondaryCta.label}</Link>
               </Button>
             </div>
           </div>
@@ -159,46 +248,103 @@ export default async function Homepage() {
   );
 }
 
+/** Static illustration of an order escrow and its spend paths (example data, not a live order). */
+function EscrowIllustration() {
+  return (
+    <figure className="mx-auto w-full max-w-md lg:mr-0">
+      <Card className="space-y-6 p-6 shadow-lg">
+        <div className="flex items-center justify-between gap-4">
+          <span className="font-mono text-xs text-muted-foreground">escrow · order #1042</span>
+          <Badge action="positive" variant="outline" className="text-xs">
+            Funds locked
+          </Badge>
+        </div>
+        <div className="space-y-1">
+          <p className="flex items-center gap-1 text-4xl font-bold">
+            <Satoshi className="size-8" aria-hidden />
+            25,000
+            <span className="sr-only">sats</span>
+          </p>
+          <p className="truncate font-mono text-xs text-muted-foreground">tark1qz8v…m4x7f3k</p>
+        </div>
+        <ul className="space-y-3 border-t pt-6">
+          <SpendPath label="Release" signers="buyer + seller" />
+          <SpendPath label="Dispute" signers="arbiter + winning side" />
+          <SpendPath label="Exit" signers="after timelock, no operator" />
+        </ul>
+        <p className="flex items-center gap-2 text-xs text-muted-foreground">
+          <ShieldCheck className="size-4 shrink-0" aria-hidden />
+          No single key can move these funds.
+        </p>
+      </Card>
+      <figcaption className="sr-only">
+        Example of an order escrow: the funds can be released only by buyer and seller together, by
+        the arbiter with the side it ruled for, or after a timelock without the operator.
+      </figcaption>
+    </figure>
+  );
+}
+
+function SpendPath({ label, signers }: { label: string; signers: string }) {
+  return (
+    <li className="flex items-center justify-between gap-4 text-sm">
+      <span className="font-medium">{label}</span>
+      <span className="font-mono text-xs text-muted-foreground">{signers}</span>
+    </li>
+  );
+}
+
 function SectionHeading({
+  id,
   eyebrow,
   title,
   subtitle,
 }: {
+  id: string;
   eyebrow: string;
   title: string;
-  subtitle: string;
+  subtitle?: string;
 }) {
   return (
-    <div className="max-w-lg space-y-2">
-      <span className="text-sm font-semibold tracking-widest text-primary uppercase">
+    <div className="max-w-xl space-y-3">
+      <span className="font-mono text-xs tracking-widest text-muted-foreground uppercase">
         {eyebrow}
       </span>
-      <h2 className="text-3xl font-bold text-balance">{title}</h2>
-      <P className="text-pretty text-muted-foreground">{subtitle}</P>
+      <h2 id={id} className="scroll-mt-24 font-serif text-3xl font-semibold text-balance">
+        {title}
+      </h2>
+      {subtitle && <P className="text-pretty text-muted-foreground">{subtitle}</P>}
     </div>
   );
 }
 
-function Feature({
+function IconChip({ icon }: { icon: React.ReactNode }) {
+  return (
+    <span
+      aria-hidden
+      className="flex size-10 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground [&_svg]:size-5"
+    >
+      {icon}
+    </span>
+  );
+}
+
+function Principle({
   icon,
   title,
   description,
-  variant = "solid",
 }: {
   icon: React.ReactNode;
   title: string;
   description: string;
-  variant?: "solid" | "ghost";
 }) {
   return (
-    <Card variant={variant} className="h-full">
+    <Card className="h-full">
       <CardHeader className="gap-4">
-        <span className="flex size-10 items-center justify-center rounded-md bg-primary/20 text-primary [&_svg]:size-5">
-          {icon}
-        </span>
-        <CardTitle className="text-lg">{title}</CardTitle>
+        <IconChip icon={icon} />
+        <CardTitle className="text-lg font-semibold">{title}</CardTitle>
       </CardHeader>
-      <CardContent className="text-muted-foreground">{description}</CardContent>
+      <CardContent className="text-pretty text-muted-foreground">{description}</CardContent>
     </Card>
   );
 }
@@ -215,17 +361,35 @@ function Step({
   description: string;
 }) {
   return (
-    <Card className="h-full">
-      <CardHeader className="gap-4">
-        <div className="flex items-center justify-between">
-          <span className="flex size-10 items-center justify-center rounded-md bg-primary/20 text-primary [&_svg]:size-5">
-            {icon}
-          </span>
-          <span className="text-4xl font-bold text-primary/30">{step}</span>
-        </div>
-        <CardTitle className="text-lg">{title}</CardTitle>
-      </CardHeader>
-      <CardContent className="text-muted-foreground">{description}</CardContent>
-    </Card>
+    <li className="space-y-3 border-t-2 border-primary pt-4">
+      <div className="flex items-center justify-between">
+        <IconChip icon={icon} />
+        <span className="font-mono text-sm text-muted-foreground" aria-hidden>
+          {String(step).padStart(2, "0")}
+        </span>
+      </div>
+      <h3 className="font-semibold">{title}</h3>
+      <p className="text-sm text-pretty text-muted-foreground">{description}</p>
+    </li>
+  );
+}
+
+function WalletRow({
+  icon,
+  title,
+  description,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="flex gap-4 p-6">
+      <IconChip icon={icon} />
+      <div className="space-y-1">
+        <p className="font-semibold">{title}</p>
+        <p className="text-sm text-pretty text-muted-foreground">{description}</p>
+      </div>
+    </div>
   );
 }

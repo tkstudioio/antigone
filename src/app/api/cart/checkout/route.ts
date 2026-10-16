@@ -55,7 +55,13 @@ export const POST = signedRoute({
     });
 
     if ("error" in result) {
-      return Response.json({ error: result.error }, { status: result.status });
+      return Response.json(
+        {
+          error: result.error,
+          ...(result.unavailableKeys ? { unavailableKeys: result.unavailableKeys } : {}),
+        },
+        { status: result.status }
+      );
     }
 
     if (result.orders.length === 0) {

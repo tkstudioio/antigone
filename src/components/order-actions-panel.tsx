@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { toast } from "react-toastify";
 import { useQueryClient, useIsFetching } from "@tanstack/react-query";
 
 import {
+  useCancelOrder,
   useConfirmAndPrepareRelease,
   usePrepareRelease,
   useCollaborateRelease,
@@ -21,8 +22,19 @@ import {
 import { useSendPayment } from "@/hooks/wallet";
 import { deriveEscrowAddress } from "@/lib/ark/escrow";
 import { assertEscrowOperator } from "@/lib/ark/operator-signer";
-import { ESCROW_STATUS_LABELS, type EscrowStatus } from "@/lib/escrow-status";
-import { EscrowFundingBar } from "@/components/escrow-funding-bar";
+import { ESCROW_STATUS_LABELS, canOpenDispute, type EscrowStatus } from "@/lib/escrow-status";
+import { EscrowFundingBar, formatExpiry } from "@/components/escrow-funding-bar";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -38,6 +50,43 @@ type Props = {
   fundingUnavailable?: boolean;
 };
 
+/** Secondary "Cancel order" action behind a confirmation dialog (irreversible: keys go back on sale). */
+function CancelOrderButton({
+  disabled,
+  pending,
+  onConfirm,
+}: {
+  disabled: boolean;
+  pending: boolean;
+  onConfirm: () => void;
+}) {
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger asChild>
+        <Button type="button" variant="outline" className="w-full" disabled={disabled}>
+          {pending && <Loader2 className="size-4 animate-spin" />}
+          Cancel order
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Cancel this order?</AlertDialogTitle>
+          <AlertDialogDescription>
+            The order is cancelled for good, the reserved keys are released back on sale and the
+            chat is closed. This cannot be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Keep order</AlertDialogCancel>
+          <AlertDialogAction action="negative" onClick={onConfirm}>
+            Cancel order
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
 export function OrderActionsPanel({ order, funding, fundingUnavailable }: Props) {
   const queryClient = useQueryClient();
   const isFetchingOrder = useIsFetching({ queryKey: ["orders", "detail", order.id] }) > 0;
@@ -50,6 +99,7 @@ export function OrderActionsPanel({ order, funding, fundingUnavailable }: Props)
   const deliverKeys = useDeliverKeys();
   const prepareDisputeSettlement = usePrepareDisputeSettlement();
   const finalizeDisputeSettlement = useFinalizeDisputeSettlement();
+  const cancelOrder = useCancelOrder();
   const sendPayment = useSendPayment();
 
   const releaseBusy =
@@ -61,6 +111,7 @@ export function OrderActionsPanel({ order, funding, fundingUnavailable }: Props)
     deliverKeys.isPending ||
     prepareDisputeSettlement.isPending ||
     finalizeDisputeSettlement.isPending ||
+    cancelOrder.isPending ||
     sendPayment.isPending;
 
   // Every action that signs, pays or settles stays disabled while the order fails verification
@@ -83,6 +134,32 @@ export function OrderActionsPanel({ order, funding, fundingUnavailable }: Props)
     }, 1500);
     return () => clearInterval(id);
   }, [isAwaitingPayment, order.id, queryClient]);
+
+  // Payment deadline: only set while the order is unpaid. After it the order is cancelled
+  // automatically and the seller may cancel it. A timer flips `paymentExpired` at the deadline so the
+  // seller's button enables without a refetch.
+  const paymentExpiresAtMs = order.paymentExpiresAt
+    ? new Date(order.paymentExpiresAt).getTime()
+    : null;
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (paymentExpiresAtMs == null) return;
+    const delay = Math.max(paymentExpiresAtMs - Date.now(), 0);
+    // setTimeout caps at ~24.8 days; the payment window is far shorter.
+    const id = setTimeout(() => setNow(Date.now()), delay + 50);
+    return () => clearTimeout(id);
+  }, [paymentExpiresAtMs]);
+  const paymentExpired = paymentExpiresAtMs != null && paymentExpiresAtMs <= now;
+  const expiryLabel = paymentExpiresAtMs != null ? formatExpiry(paymentExpiresAtMs) : null;
+
+  const handleCancel = async () => {
+    try {
+      await cancelOrder.mutateAsync({ orderId: order.id });
+      toast.success("Order cancelled");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not cancel the order");
+    }
+  };
 
   // The favoured party is the arbiter's SIGNED choice (server field only for legacy, unsigned verdicts).
   const verdict = order.verification.verdict;
@@ -157,49 +234,49 @@ export function OrderActionsPanel({ order, funding, fundingUnavailable }: Props)
           .with(
             { role: "buyer", escrowStatus: Pattern.union("awaitingFunds", "partiallyFunded") },
             () => (
-              <Button
-                className="w-full"
-                // The amount still due depends on what the indexer reports as locked.
-                disabled={actionsDisabled || !funding || fundingUnavailable}
-                onClick={async () => {
-                  try {
-                    // Before any funds move: the operator key must be the operator's own and the
-                    // address we pay must be the one these escrow parameters derive to.
-                    await assertEscrowOperator(escrow!);
-                    if (deriveEscrowAddress(escrowParamsFrom(escrow!)) !== escrow!.address) {
-                      throw new Error("The escrow address does not match its parameters");
+              <>
+                {expiryLabel && (
+                  <P>
+                    {paymentExpired ? "Payment expired on " : "Payment expires on "}
+                    {expiryLabel}.
+                  </P>
+                )}
+                <Button
+                  className="w-full"
+                  // The amount still due depends on what the indexer reports as locked.
+                  disabled={actionsDisabled || !funding || fundingUnavailable}
+                  onClick={async () => {
+                    try {
+                      // Before any funds move: the operator key must be the operator's own and the
+                      // address we pay must be the one these escrow parameters derive to.
+                      await assertEscrowOperator(escrow!);
+                      if (deriveEscrowAddress(escrowParamsFrom(escrow!)) !== escrow!.address) {
+                        throw new Error("The escrow address does not match its parameters");
+                      }
+                      await sendPayment.mutateAsync({
+                        destination: escrow!.address,
+                        amount: escrow!.price - funding!.total,
+                      });
+                      queryClient.invalidateQueries({
+                        queryKey: ["orders", "detail", order.id],
+                      });
+                    } catch (err) {
+                      toast.error(err instanceof Error ? err.message : "Payment failed");
                     }
-                    await sendPayment.mutateAsync({
-                      destination: escrow!.address,
-                      amount: escrow!.price - funding!.total,
-                    });
-                    queryClient.invalidateQueries({
-                      queryKey: ["orders", "detail", order.id],
-                    });
-                  } catch (err) {
-                    toast.error(err instanceof Error ? err.message : "Payment failed");
-                  }
-                }}
-              >
-                Pay
-              </Button>
+                  }}
+                >
+                  Pay
+                </Button>
+                <CancelOrderButton
+                  disabled={actionsDisabled}
+                  pending={cancelOrder.isPending}
+                  onConfirm={handleCancel}
+                />
+              </>
             )
           )
           .with({ role: "buyer", escrowStatus: "fundLocked" }, () => (
-            <Button
-              variant="outline"
-              className="w-full"
-              disabled={actionsDisabled}
-              onClick={() =>
-                openDispute.mutateAsync({
-                  orderId: order.id,
-                  chatId: order.chatId,
-                  adminPubkey: trustedArbiterPubkey,
-                })
-              }
-            >
-              Open dispute
-            </Button>
+            <P>Payment locked. Waiting for the seller to confirm and deliver the keys.</P>
           ))
           .with({ role: "buyer", escrowStatus: "sellerReady" }, () => (
             <Button
@@ -216,23 +293,27 @@ export function OrderActionsPanel({ order, funding, fundingUnavailable }: Props)
           // ── Seller ──
           .with(
             { role: "seller", escrowStatus: Pattern.union("awaitingFunds", "partiallyFunded") },
-            () => <P>Waiting for the buyer to lock all the funds.</P>
+            () => (
+              <>
+                <P>Waiting for the buyer to lock all the funds.</P>
+                {expiryLabel && (
+                  <P>
+                    {paymentExpired ? "Payment expired on " : "Payment expires on "}
+                    {expiryLabel}.
+                  </P>
+                )}
+                {paymentExpired && (
+                  <CancelOrderButton
+                    disabled={actionsDisabled}
+                    pending={cancelOrder.isPending}
+                    onConfirm={handleCancel}
+                  />
+                )}
+              </>
+            )
           )
           .with({ role: "seller", escrowStatus: "sellerReady" }, () => (
-            <Button
-              variant="outline"
-              className="w-full"
-              disabled={actionsDisabled}
-              onClick={() =>
-                openDispute.mutateAsync({
-                  orderId: order.id,
-                  chatId: order.chatId,
-                  adminPubkey: trustedArbiterPubkey,
-                })
-              }
-            >
-              Open dispute
-            </Button>
+            <P>Waiting for the buyer to collaborate on the release.</P>
           ))
           .with({ role: "seller", escrowStatus: "buyerCheckpointsSigned" }, () => (
             <Button
@@ -323,6 +404,27 @@ export function OrderActionsPanel({ order, funding, fundingUnavailable }: Props)
           ))
           .with({ role: undefined }, () => <P>Role not defined.</P>)
           .otherwise(() => null)}
+
+        {/* Single secondary dispute affordance for both roles, shown whenever the server would accept
+            a dispute (funds locked, release not yet collaborated) — independent of the primary action.
+            Like every other action it stays visible but disabled while the order is blocked, so a
+            failed verification never hides the fact that the dispute route exists. */}
+        {(role === "buyer" || role === "seller") && canOpenDispute(order.status, escrowStatus) && (
+          <Button
+            variant="outline"
+            className="w-full"
+            disabled={actionsDisabled}
+            onClick={() =>
+              openDispute.mutateAsync({
+                orderId: order.id,
+                chatId: order.chatId,
+                adminPubkey: trustedArbiterPubkey,
+              })
+            }
+          >
+            Open dispute
+          </Button>
+        )}
       </CardContent>
     </Card>
   );

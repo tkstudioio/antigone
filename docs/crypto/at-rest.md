@@ -54,20 +54,20 @@ and the server cannot brute-force short codes from it. It is per seller: dedup i
   (`SignedAction`, which now stores the ciphertext-only body) is the evidence.
 - A locked wallet (no private key in memory) blocks upload / confirm / deliver («Wallet unavailable»).
 - Legacy rows encrypted with the old server-side key (`v1:<iv>:<tag>:<ct>`, 4 parts) are **not readable
-  anymore** (the UI shows `—`); they are development data to wipe with `yarn db:anti-seed`. The
+  anymore** (the UI shows `—`); they are development data to wipe with `pnpm db:anti-seed`. The
   server-side code helpers (`encryptCode`, `hashCode`, `safeDecryptCode`) and the backfill script were
   removed.
 
-## Chat attachments (MinIO)
+## Chat attachments (S3 bucket)
 
-Chat image attachments are **encrypted at rest** before landing on MinIO: the bucket contains only
-ciphertext. Storage client in `src/lib/storage/minio.ts`:
+Chat image attachments are **encrypted at rest** before landing on the S3 bucket, which contains only
+ciphertext. Storage client in `src/lib/storage/s3.ts`:
 
 - `putChatObject` → key `chat/{chatId}/{uuid}.{ext}`, encrypts with `encryptBytes`;
 - `getChatObject` → GET + server-side decryption.
 
 The **download is proxied** by the app exclusively via `GET /api/chat/[id]/attachment/[messageId]`:
-the server downloads the ciphertext from MinIO, decrypts it with `getChatObject` and proxies the
+the server downloads the ciphertext from the bucket, decrypts it with `getChatObject` and proxies the
 cleartext bytes — **no presigned URL**. Legacy plaintext objects (pre-encryption) are returned
 unchanged (`decryptBytes` passes through blobs without a header).
 
@@ -75,10 +75,10 @@ unchanged (`decryptBytes` passes through blobs without a header).
 > authentication, no decryption) and rejects with **404** any key under the `chat/` prefix — it
 > cannot be used to serve chat/dispute attachments.
 
-The S3 client is built from the `MINIO_*` env vars with `forcePathStyle: true`; if they are missing at
+The S3 client is built from the `S3_*` env vars with `forcePathStyle: true` (MinIO locally, Cloudflare R2 on Vercel); if they are missing at
 runtime the involved endpoint responds 500. The upload does **not** create the message: it returns the
 metadata (`{ key, name, contentType, size }`), then the signed/admin message references them. An
-upload without a subsequent message leaves an **orphan** file on MinIO (no garbage collection in this
+upload without a subsequent message leaves an **orphan** object in the bucket (no garbage collection in this
 iteration).
 
 > Attachment constraints (MIME, size) and the UI flow are in [account/chat.md](../account/chat.md) and

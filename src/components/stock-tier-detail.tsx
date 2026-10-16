@@ -2,13 +2,15 @@
 
 import { useState } from "react";
 import { match } from "ts-pattern";
-import { Loader2 } from "lucide-react";
+import { Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "react-toastify";
 
 import type { StockTier } from "@/hooks/stocks";
 import { useStockTierKeys, useDeleteStock, useDeleteKeysFromStock } from "@/hooks/stocks";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
+import { Satoshi } from "@/components/icons/satoshi";
+import { formatPrice } from "@/lib/utils";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Table,
@@ -28,17 +30,16 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { CreateStockSheet } from "@/components/create-stock-sheet";
+import { CreateStockDialog } from "@/components/create-stock-dialog";
 import { EditStockPriceDialog } from "@/components/edit-stock-price-dialog";
 
 type Props = {
   tier: StockTier;
   productId: number;
   productName: string;
-  productSlug: string;
 };
 
-export function StockTierDetail({ tier, productId, productName, productSlug }: Props) {
+export function StockTierDetail({ tier, productId, productName }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [addKeysOpen, setAddKeysOpen] = useState(false);
   const [editPriceOpen, setEditPriceOpen] = useState(false);
@@ -98,135 +99,165 @@ export function StockTierDetail({ tier, productId, productName, productSlug }: P
 
   return (
     <>
-      <Card>
-        <CardHeader className="pb-2">
-          <div className="flex flex-col gap-0.5">
-            <span className="font-semibold">{tier.price.toLocaleString("en-US")} sats</span>
-            <span className="text-sm text-muted-foreground">
+      <Card className="space-y-0 py-0">
+        <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+          <div className="space-y-1">
+            <p className="font-mono text-xs tracking-widest text-muted-foreground uppercase">
+              Price tier
+            </p>
+            <p className="flex items-center text-3xl font-bold tabular-nums">
+              <Satoshi className="size-7 shrink-0" aria-hidden />
+              {formatPrice(tier.price)}
+              <span className="sr-only"> sats</span>
+            </p>
+            <p className="text-sm text-muted-foreground">
               {tier.availableCount.toLocaleString("en-US")} key
               {tier.availableCount === 1 ? "" : "s"} available
-            </span>
+            </p>
           </div>
-        </CardHeader>
-
-        <CardContent className="flex flex-col gap-2">
-          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+          <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
+              action="muted"
               size="sm"
-              className="w-full sm:w-auto"
+              className="flex-1 sm:flex-none"
               onClick={() => setAddKeysOpen(true)}
             >
+              <Plus />
               Add keys
             </Button>
             <Button
               variant="outline"
+              action="muted"
               size="sm"
-              className="w-full sm:w-auto"
+              className="flex-1 sm:flex-none"
               onClick={() => setEditPriceOpen(true)}
             >
+              <Pencil />
               Edit price
             </Button>
             <Button
+              variant="ghost"
               action="negative"
               size="sm"
-              className="w-full sm:w-auto"
-              disabled={removeDisabled}
-              onClick={() => setRemoveKeysOpen(true)}
-            >
-              Remove selected
-            </Button>
-            <Button
-              action="negative"
-              size="sm"
-              className="w-full sm:ml-auto sm:w-auto"
+              className="flex-1 sm:flex-none"
               onClick={() => setDeleteStockOpen(true)}
             >
+              <Trash2 />
               Delete stock
             </Button>
           </div>
-          {selected.size > 0 && selected.size === tier.availableCount && (
-            <p className="text-xs text-muted-foreground">
-              To empty the stock use &ldquo;Delete stock&rdquo;
-            </p>
-          )}
-        </CardContent>
+        </div>
 
-        <CardContent className="flex flex-col gap-4">
-          {match(keysQuery)
-            .with({ isPending: true }, () => (
-              <div className="flex justify-center py-4">
-                <Loader2 className="size-5 animate-spin text-muted-foreground" />
-              </div>
-            ))
-            .with({ isError: true }, () => (
-              <p className="text-sm text-destructive">Error loading the keys.</p>
-            ))
-            .with({ isSuccess: true }, () => (
-              <div className="overflow-x-auto rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-10">
+        {/* Selection bar */}
+        <div className="flex min-h-12 flex-wrap items-center justify-between gap-2 border-y bg-muted/40 px-4 py-2 sm:px-6">
+          <p className="text-sm text-muted-foreground" aria-live="polite">
+            {selected.size === 0
+              ? "Select keys to remove them from this tier."
+              : selected.size === tier.availableCount
+                ? "All keys selected: to empty the stock use “Delete stock”."
+                : `${selected.size.toLocaleString("en-US")} selected`}
+          </p>
+          {selected.size > 0 && (
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                action="muted"
+                size="sm"
+                onClick={() => setSelected(new Set())}
+              >
+                Clear
+              </Button>
+              <Button
+                action="negative"
+                size="sm"
+                disabled={removeDisabled}
+                onClick={() => setRemoveKeysOpen(true)}
+              >
+                <Trash2 />
+                Remove selected
+              </Button>
+            </div>
+          )}
+        </div>
+
+        {match(keysQuery)
+          .with({ isPending: true }, () => (
+            <div className="flex justify-center py-8">
+              <Loader2
+                className="size-5 animate-spin text-muted-foreground"
+                aria-label="Loading keys"
+              />
+            </div>
+          ))
+          .with({ isError: true }, () => (
+            <p className="px-4 py-6 text-sm text-destructive sm:px-6">Error loading the keys.</p>
+          ))
+          .with({ isSuccess: true }, () => (
+            <Table>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className="w-12 pl-4 sm:pl-6">
+                    <Checkbox
+                      aria-label="Select all keys"
+                      checked={allSelected ? true : selected.size > 0 ? "indeterminate" : false}
+                      onCheckedChange={() => handleToggleAll(keys)}
+                    />
+                  </TableHead>
+                  <TableHead className="text-muted-foreground">ID</TableHead>
+                  <TableHead className="text-muted-foreground">Code</TableHead>
+                  <TableHead className="pr-4 text-right text-muted-foreground sm:pr-6">
+                    Created on
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {keys.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={4} className="py-8 text-center text-muted-foreground">
+                      No keys available.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  keys.map((k) => (
+                    <TableRow key={k.id} data-state={selected.has(k.id) ? "selected" : undefined}>
+                      <TableCell className="pl-4 sm:pl-6">
                         <Checkbox
-                          checked={allSelected}
-                          onCheckedChange={() => handleToggleAll(keys)}
+                          aria-label={`Select key #${k.id}`}
+                          checked={selected.has(k.id)}
+                          onCheckedChange={() => handleToggleKey(k.id)}
                         />
-                      </TableHead>
-                      <TableHead>ID</TableHead>
-                      <TableHead>Code</TableHead>
-                      <TableHead>Created on</TableHead>
+                      </TableCell>
+                      <TableCell className="font-mono text-xs text-muted-foreground">
+                        #{k.id}
+                      </TableCell>
+                      <TableCell className="font-mono text-sm">
+                        {k.code != null ? (
+                          k.code
+                        ) : k.codeStatus === "undecryptable" ? (
+                          <span className="font-sans text-destructive">Unable to decrypt</span>
+                        ) : (
+                          "—"
+                        )}
+                      </TableCell>
+                      <TableCell className="pr-4 text-right text-sm text-muted-foreground tabular-nums sm:pr-6">
+                        {new Date(k.createdAt).toLocaleDateString("en-US")}
+                      </TableCell>
                     </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {keys.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={4} className="text-center text-muted-foreground">
-                          No keys available.
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      keys.map((k) => (
-                        <TableRow key={k.id}>
-                          <TableCell>
-                            <Checkbox
-                              checked={selected.has(k.id)}
-                              onCheckedChange={() => handleToggleKey(k.id)}
-                            />
-                          </TableCell>
-                          <TableCell className="font-mono text-xs text-muted-foreground">
-                            #{k.id}
-                          </TableCell>
-                          <TableCell className="font-mono text-sm">
-                            {k.code != null ? (
-                              k.code
-                            ) : k.codeStatus === "undecryptable" ? (
-                              <span className="font-sans text-destructive">Unable to decrypt</span>
-                            ) : (
-                              "—"
-                            )}
-                          </TableCell>
-                          <TableCell className="text-sm text-muted-foreground">
-                            {new Date(k.createdAt).toLocaleDateString("en-US")}
-                          </TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-            ))
-            .otherwise(() => null)}
-        </CardContent>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          ))
+          .otherwise(() => null)}
       </Card>
 
-      {/* Add keys sheet */}
-      <CreateStockSheet
+      {/* Add keys wizard */}
+      <CreateStockDialog
         open={addKeysOpen}
         onOpenChange={setAddKeysOpen}
         mode="append"
         productId={productId}
-        productSlug={productSlug}
         productName={productName}
         price={tier.price}
       />

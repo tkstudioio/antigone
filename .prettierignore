@@ -4,4 +4,4 @@ build
 node_modules
 *.db
 drizzle
-yarn.lock
+pnpm-lock.yaml

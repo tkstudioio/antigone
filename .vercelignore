@@ -1,0 +1,3 @@
+# Local secrets never go into CLI deploy uploads (Vercel injects env at build/runtime).
+.env
+.env.*

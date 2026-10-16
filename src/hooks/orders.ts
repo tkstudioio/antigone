@@ -411,6 +411,28 @@ async function buildBuyerWraps(order: OrderDetailView) {
   return { keys, privateKey: account.privateKey };
 }
 
+/**
+ * Cancel an unpaid order: the keys go back on sale, the reservation is dropped and the order chat is
+ * closed. The server only accepts it while no funds are locked in the escrow, from the buyer at any
+ * time and from the seller once the payment deadline has passed (`paymentExpiresAt`). Errors (403 /
+ * 409 / 503) are surfaced to the caller. Refreshes the order detail and every order list.
+ */
+export function useCancelOrder() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { orderId: number }) => {
+      const { account } = useProfileStore.getState();
+      if (!account?.privateKey) throw new Error("Wallet not initialized");
+      const { orderId } = input;
+      return postSigned(`/orders/${orderId}/cancel`, { orderId }, account.privateKey);
+    },
+    onSuccess: () => {
+      // Prefix match: covers the order detail and all order lists.
+      void queryClient.invalidateQueries({ queryKey: ["orders"] });
+    },
+  });
+}
+
 /** Seller confirms the order = delivers the keys (re-wrapped toward the buyer). */
 export function useConfirmOrder() {
   const queryClient = useQueryClient();

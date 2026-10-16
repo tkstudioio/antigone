@@ -2,7 +2,7 @@
 // process.env, so it cannot run in a browser bundle anyway, and it is imported by
 // tsx-run scripts where the `server-only` marker throws.
 //
-// Server-side AES-256-GCM at rest, used ONLY for chat attachments (MinIO). License codes are NOT
+// Server-side AES-256-GCM at rest, used ONLY for chat attachments (S3 bucket). License codes are NOT
 // handled here: they are end-to-end encrypted in the browser (see `code-envelope.ts`), so the server
 // holds no key that can read them.
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
@@ -24,7 +24,7 @@ function getKey(): Buffer {
 }
 
 // ─── Binary blob encryption (chat attachments) ────────────────────────────────
-// Compact binary container so we can store the raw bytes in MinIO.
+// Compact binary container so we can store the raw bytes in the S3 bucket.
 // Layout: [1-byte version][12-byte iv][16-byte tag][ciphertext].
 const BYTES_VERSION = 0x01;
 

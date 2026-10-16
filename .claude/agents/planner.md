@@ -90,5 +90,5 @@ As a [user], I want [action] so that [benefit].
 - DO NOT invent files: every cited path must exist or be explicitly marked as "to create".
 - Be specific but concise. Use bullet lists.
 - Technical, operational language.
-- Respect project conventions (e.g. `yarn` only, `next-auth` credentials, `ilike` for case-insensitive search, normalization at import time).
+- Respect project conventions (e.g. `pnpm` only, `next-auth` credentials, `ilike` for case-insensitive search, normalization at import time).
 - One task per invocation. If the request is too broad, split via assumptions and propose the smallest reasonable scope.

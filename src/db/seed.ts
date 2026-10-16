@@ -74,7 +74,7 @@ function generateProducts(count: number) {
     products.push({
       name,
       slug,
-      description: `${genre} game - ${name}. Un'esperienza affascinante e coinvolgente.`,
+      description: `${genre} game - ${name}. A captivating and immersive experience.`,
       rating: 3 + Math.random() * 2,
       imageUrl: `https://picsum.photos/seed/${slug}/640/360`,
     });

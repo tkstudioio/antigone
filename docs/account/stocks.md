@@ -17,10 +17,34 @@ Prices are organized into **tiers**: keys of the same product and same price for
 
 ## Detail page (`stocks/[productSlug]`)
 
-Shows, in order: a "Back to stock" CTA, an H1 title (product name), then one card per tier
-(`StockTierDetail`). Each card reports price and availability, the actions (remove selected, add keys,
-edit price, delete stock) and — below the actions — the list of selectable keys always visible (no
-accordion).
+Shows, in order: a "Back to stocks" CTA, an H1 title (product name), a summary line (tiers · total
+available keys), then one card per tier (`StockTierDetail`). Each card reports price and availability
+with the tier actions (add keys, edit price, delete stock), then a selection bar (selected count,
+«Remove selected», disabled when every key is selected — use «Delete stock» instead) and the table
+of selectable keys, always visible (no accordion).
+
+## List page (`stocks`)
+
+A toolbar with search (debounced, `search` in the URL), sort (`SegmentedControl`: name, available,
+lowest price → `sort`/`dir` in the URL) and a «Filters» popover with the price/keys range sliders.
+The ranges are **client-side** and filter only the rows of the current page. Products are rows of a
+single list (tiers, availability badge + bar, available keys, price range), each linking to the
+detail page.
+
+## Add stock wizard (`create-stock-dialog.tsx`)
+
+`CreateStockDialog` is a multi-step dialog with a step indicator (completed steps are clickable to go
+back); each step validates its own fields before «Next».
+
+- **Create** (`mode="create"`, «Add stock» on the list page): **Product** (search box + grid of
+  product cards from `useProducts`, showing the market's lowest price) → **Price** (per key, sats; hints
+  the market's lowest price) → **Keys** (one per line, trimmed + deduplicated, max 1000) → **Review**
+  (product, price per key, total keys, total value in sats; confirm or cancel).
+- **Append** (`mode="append"`, «Add keys» on a tier): product and price are fixed, so only **Keys** →
+  **Review**.
+
+Confirming calls `useCreateStock`; the dialog cannot be closed while the upload is pending. A new
+stock redirects to `stocks/[productSlug]`, otherwise a toast reports inserted/skipped counts.
 
 ## Code encryption (E2E)
 

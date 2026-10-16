@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { IMAGE_MIME_ALLOWLIST, MAX_ATTACHMENT_BYTES } from "@/validators";
-import { putChatObject } from "@/lib/storage/minio";
+import { putChatObject } from "@/lib/storage/s3";
 import { isDisputeStatus } from "@/lib/backend/dispute-access";
 import { signedRoute } from "@/lib/auth/signed-route";
 

@@ -11,10 +11,23 @@ in the browser from a BIP39 mnemonic + passphrase and **never leaves the client*
   removal update the list instantly. Selecting an account opens the `PassphraseDialog` that
   asks for the passphrase; each entry also has a removal action (`useRemoveAccount`). At the bottom,
   `LoginActions` links to creation/restore.
-- `(auth)/create` — form → username + passphrase (with confirmation), generates a new mnemonic, registers
-  the account, **encrypts the mnemonic with the passphrase** and saves the `StoredAccount`. Shows the mnemonic
-  **only once** for backup (warning: mnemonic + passphrase both required and not
-  recoverable).
+- `(auth)/create` — a four-step wizard (`CreateAccountWizard`, `src/components/create-account-wizard.tsx`;
+  the page only renders it). **Nothing is registered or stored until the last step**: the key is
+  derived from mnemonic + passphrase, and the passphrase comes last.
+  1. **Username** — `useCreateUsernameForm`; on submit the browser generates the mnemonic
+     (`generateMnemonic`), kept in component state only.
+  2. **Back up** — shows the 12 words with the warning that mnemonic + passphrase are both required
+     and not recoverable. The user either verifies the backup (step 3) or skips it (step 4).
+  3. **Verify** (optional) — `SeedPhraseVerify` (`src/components/seed-phrase-verify.tsx`): the 12-word
+     grid with every word masked except 3 random positions (Web Crypto RNG, re-drawn on each attempt),
+     which become inputs (`useSeedVerifyForm`). The match is local and case-insensitive; mismatches are
+     flagged per input with a summary alert, and «Show the words again» returns to step 2. A match
+     moves on to step 4 with a «Your backup is valid» notice.
+  4. **Passphrase** — passphrase + confirmation (`useCreatePassphraseForm`). On submit
+     `useCreateAccountMutation({ username, mnemonic, passphrase })` derives the key, registers the
+     account, **encrypts the mnemonic with the passphrase**, saves the `StoredAccount` and redirects to
+     `/login`. The words are never shown again; leaving the wizard earlier discards them and creates
+     nothing.
 - `(auth)/restore` — `RestoreAccountForm` → rebuilds an account from the provided mnemonic + passphrase,
   (re)registers it, saves the encrypted `StoredAccount` and **redirects to `/login`**.
 
@@ -22,7 +35,7 @@ in the browser from a BIP39 mnemonic + passphrase and **never leaves the client*
 
 | Action         | Page / Component                                                      | Hook                                        | API                                            |
 | -------------- | --------------------------------------------------------------------- | ------------------------------------------- | ---------------------------------------------- |
-| Create account | `create/page.tsx`                                                     | `accounts.ts` (`useCreateAccountMutation`)  | `POST /api/auth/register`                      |
+| Create account | `create/page.tsx` → `create-account-wizard.tsx`                       | `accounts.ts` (`useCreateAccountMutation`)  | `POST /api/auth/register`                      |
 | Restore        | `restore/page.tsx` → `restore-account-form.tsx`                       | `accounts.ts` (`useRestoreAccountMutation`) | `POST /api/auth/register`                      |
 | Login          | `login/page.tsx` → `accounts-list-item.tsx` → `passphrase-dialog.tsx` | `accounts.ts` (`useLoginMutation`)          | `POST /api/auth/challenge` + NextAuth `signIn` |
 | Unlock         | `wallet-auto-reconnect.tsx` → `unlock-dialog.tsx`                     | `wallet.ts` (`useWalletAutoReconnect`)      | — (rehydration / decrypt vault)                |
@@ -62,7 +75,7 @@ arbiter-pubkey match in the dispute settlement mutations. The arbiter's **signat
 in the admin's browser (see [escrow/dispute.md](./escrow/dispute.md)).
 
 **Deriving `ADMIN_PUBKEY`.** Instance operators derive it locally, without putting the mnemonic on the
-server: `DERIVE_MNEMONIC="…" DERIVE_PASSPHRASE="…" yarn derive:pubkey` (`src/scripts/derive-pubkey.ts`)
+server: `DERIVE_MNEMONIC="…" DERIVE_PASSPHRASE="…" pnpm derive:pubkey` (`src/scripts/derive-pubkey.ts`)
 prints the compressed pubkey using the same derivation as the client (`mnemonicToPrivateKey` +
 `derivePubkey`). The secrets are read only from the environment of that invocation (never from `.env`)
 and are never stored. See also [admin.md](./admin.md).

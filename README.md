@@ -34,7 +34,7 @@ grant or revoke.
 ## Requirements
 
 - Node `v22.22.2` (see `.nvmrc`)
-- yarn
+- pnpm (`corepack enable pnpm` picks up the version pinned in `package.json`)
 - PostgreSQL (a local instance is provided via `docker compose up -d postgres`)
 
 ## Getting started
@@ -44,7 +44,7 @@ grant or revoke.
 1. Copy `.env.example` to `.env` and fill in the secrets.
 2. Install dependencies:
    ```bash
-   yarn
+   pnpm install
    ```
 3. Start PostgreSQL (optional, if you use the bundled one):
    ```bash
@@ -52,17 +52,25 @@ grant or revoke.
    ```
 4. Generate the Prisma client and run migrations:
    ```bash
-   yarn db:generate
-   yarn db:migrate
+   pnpm db:generate
+   pnpm db:migrate
    ```
 5. (Optional) seed sample products:
    ```bash
-   yarn db:seed
+   pnpm db:seed
    ```
 6. Start the dev server:
    ```bash
-   yarn dev
+   pnpm dev
    ```
+
+### Deploy on Vercel
+
+Vercel ships pnpm 6–10 and picks one from the lockfile, so the pinned pnpm version is applied only
+through Corepack. Add the environment variable `ENABLE_EXPERIMENTAL_COREPACK=1` to the project (all
+environments) so the build uses the `packageManager` version from `package.json`. Without it the
+build runs Vercel's own pnpm, which does not read the settings in `pnpm-workspace.yaml`
+(`allowBuilds`, `overrides`) and can reject the lockfile.
 
 ## Documentation
 

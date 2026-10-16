@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
-import { getS3Client, getBucket } from "@/lib/storage/minio";
+import { getS3Client, getBucket } from "@/lib/storage/s3";
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ key: string[] }> }) {
   const { key } = await params;

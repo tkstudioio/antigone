@@ -4,7 +4,7 @@ import { signMessage } from "@/lib/auth/signature";
 import { postSigned } from "@/lib/auth/signed-request";
 import { decryptMnemonic, encryptMnemonic } from "@/lib/auth/vault";
 import { backend } from "@/lib/backend";
-import { derivePubkey, generateMnemonic, mnemonicToPrivateKey } from "@/lib/utils";
+import { derivePubkey, mnemonicToPrivateKey } from "@/lib/utils";
 import useProfileStore from "@/stores/profile";
 import { StoredAccount } from "@/types/account";
 import { passphraseSchema } from "@/validators";
@@ -90,9 +90,23 @@ export function useLoginMutation() {
   });
 }
 
-const createAccountSchema = z
+// Account creation is a wizard: username → seed phrase backup (+ optional check) → passphrase.
+// Nothing is registered or stored until the last step, because the key depends on the passphrase.
+const createUsernameSchema = z.object({
+  username: z.string().min(6, "Username must be at least 6 characters"),
+});
+
+type CreateUsernameSchema = z.infer<typeof createUsernameSchema>;
+
+export function useCreateUsernameForm() {
+  return useForm<CreateUsernameSchema>({
+    defaultValues: { username: "" },
+    resolver: zodResolver(createUsernameSchema),
+  });
+}
+
+const createPassphraseSchema = z
   .object({
-    username: z.string().min(6, "Username must be at least 6 characters"),
     passphrase: passphraseSchema,
     confirmPassphrase: z.string(),
   })
@@ -101,15 +115,29 @@ const createAccountSchema = z
     path: ["confirmPassphrase"],
   });
 
-type CreateAccountSchema = z.infer<typeof createAccountSchema>;
+type CreatePassphraseSchema = z.infer<typeof createPassphraseSchema>;
+
+export function useCreatePassphraseForm() {
+  return useForm<CreatePassphraseSchema>({
+    defaultValues: { passphrase: "", confirmPassphrase: "" },
+    resolver: zodResolver(createPassphraseSchema),
+  });
+}
+
+export type CreateAccountInput = {
+  username: string;
+  /** Generated client-side at the start of the wizard and already shown to the user for backup. */
+  mnemonic: string;
+  passphrase: string;
+};
 
 export function useCreateAccountMutation() {
+  const router = useRouter();
   const [accounts, setAccounts] = useLocalStorage<StoredAccount[]>(ACCOUNTS_STORAGE_KEY, []);
 
   return useMutation({
     mutationKey: ["generate-account"],
-    mutationFn: async ({ username, passphrase }: CreateAccountSchema) => {
-      const mnemonic = generateMnemonic();
+    mutationFn: async ({ username, mnemonic, passphrase }: CreateAccountInput) => {
       // The passphrase is the 13th word: it enters the key derivation.
       const privateKey = mnemonicToPrivateKey(mnemonic, passphrase);
       const pubkey = derivePubkey(privateKey);
@@ -123,21 +151,27 @@ export function useCreateAccountMutation() {
         ? accounts
         : [...accounts, { username, pubkey, vault }];
       setAccounts(newAccountsList);
+    },
 
-      // We return the mnemonic once for backup; it is not persisted anywhere else.
-      return { mnemonic };
+    onSuccess: () => {
+      toast.success("Account created. Sign in with your passphrase.");
+      router.push("/login");
     },
   });
 }
 
-export function useCreateAccountForm() {
-  return useForm<CreateAccountSchema>({
-    defaultValues: {
-      username: "",
-      passphrase: "",
-      confirmPassphrase: "",
-    },
-    resolver: zodResolver(createAccountSchema),
+// Backup check during creation: the user re-types a few words of the seed phrase. The match
+// against the mnemonic happens in the submit handler (the mnemonic is not part of the form).
+const seedVerifySchema = z.object({
+  words: z.array(z.string().trim().min(1, "Required")),
+});
+
+export type SeedVerifySchema = z.infer<typeof seedVerifySchema>;
+
+export function useSeedVerifyForm(count: number) {
+  return useForm<SeedVerifySchema>({
+    defaultValues: { words: Array.from({ length: count }, () => "") },
+    resolver: zodResolver(seedVerifySchema),
   });
 }
 

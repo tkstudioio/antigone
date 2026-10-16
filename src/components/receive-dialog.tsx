@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { QRCodeSVG } from "qrcode.react";
 import {
   Dialog,
   DialogContent,
@@ -9,13 +10,26 @@ import {
   DialogDescription,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { ArrowDownToLine, Copy, Check } from "lucide-react";
+import { InputGroup, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
+import { SegmentedControl } from "@/components/ui/segmented-control";
+import { ArrowDownToLine, Copy, Check, CloudOff } from "lucide-react";
 import useProfileStore from "@/stores/profile";
 
-function CopyButton({ text }: { text: string }) {
+type AddressKind = "ark" | "onchain" | "bip21";
+
+type AddressOption = {
+  kind: AddressKind;
+  tab: string;
+  label: string;
+  badge: string;
+  hint: string;
+  value: string | null;
+};
+
+function CopyButton({ text, label }: { text: string; label: string }) {
   const [copied, setCopied] = useState(false);
 
   async function handleCopy() {
@@ -25,89 +39,119 @@ function CopyButton({ text }: { text: string }) {
   }
 
   return (
-    <Button onClick={handleCopy}>
-      {copied ? <Check className="size-3.5 text-green-600" /> : <Copy className="size-3.5" />}
-    </Button>
-  );
-}
-
-function AddressRow({
-  label,
-  address,
-  badge,
-}: {
-  label: string;
-  address: string | null;
-  badge?: string;
-}) {
-  if (!address) return null;
-
-  return (
-    <div className="space-y-1.5">
-      <div className="flex items-center gap-2">
-        <span className="text-sm font-medium">{label}</span>
-        {badge && (
-          <Badge action="muted" variant="outline" className="text-xs">
-            {badge}
-          </Badge>
-        )}
-      </div>
-      <div className="flex items-center gap-2">
-        <Input readOnly value={address} className="font-mono text-xs h-8" />
-        <CopyButton text={address} />
-      </div>
-    </div>
+    <InputGroupButton size="sm" onClick={handleCopy} aria-label={`Copy ${label}`}>
+      {copied ? <Check className="text-positive" /> : <Copy />}
+      <span aria-live="polite">{copied ? "Copied" : "Copy"}</span>
+    </InputGroupButton>
   );
 }
 
 export function ReceiveDialog() {
   const { addresses } = useProfileStore();
+  const [selected, setSelected] = useState<AddressKind>("ark");
 
   const bip21Uri =
     addresses?.boardingAddress && addresses.offchainAddress
       ? `bitcoin:${addresses?.boardingAddress}?ark=${addresses?.offchainAddress}`
       : null;
 
+  const options = (
+    [
+      {
+        kind: "ark",
+        tab: "Ark",
+        label: "Ark address",
+        badge: "off-chain · instant",
+        hint: "For payments from Arkade wallets: instant and off-chain.",
+        value: addresses?.offchainAddress ?? null,
+      },
+      {
+        kind: "onchain",
+        tab: "On-chain",
+        label: "Boarding address (on-chain)",
+        badge: "on-chain · Bitcoin",
+        hint: "For payments from any Bitcoin wallet. Funds show up under Onboarding first.",
+        value: addresses?.boardingAddress ?? null,
+      },
+      {
+        kind: "bip21",
+        tab: "Universal",
+        label: "Full BIP21 URI",
+        badge: "universal",
+        hint: "Ark-aware wallets pay off-chain to the Ark address; other wallets pay on-chain.",
+        value: bip21Uri,
+      },
+    ] satisfies AddressOption[]
+  ).filter((option): option is AddressOption & { value: string } => option.value !== null);
+
+  const current = options.find((option) => option.kind === selected) ?? options[0];
+
   return (
     <Dialog>
       <DialogTrigger asChild>
-        <Button action={"positive"} className="flex-1">
-          <ArrowDownToLine className="size-4" />
+        <Button action={"positive"} className="flex-1 font-semibold">
+          <ArrowDownToLine />
           Receive
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="max-w-[calc(100%-2rem)] sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Receive Bitcoin</DialogTitle>
-          <DialogDescription>Copy an address to receive a payment.</DialogDescription>
+          <DialogDescription>Show the QR code to the payer, or copy the address.</DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 pt-2">
-          {!addresses?.offchainAddress && !addresses?.boardingAddress && (
-            <p className="text-sm text-muted-foreground">
+        {!current ? (
+          <Alert action="negative">
+            <CloudOff />
+            <AlertDescription>
               Addresses unavailable: the Arkade server is unreachable. Try again later.
-            </p>
-          )}
-          {addresses?.offchainAddress && (
-            <AddressRow
-              label="Ark address"
-              address={addresses?.offchainAddress}
-              badge="off-chain • instant"
-            />
-          )}
-          {addresses?.boardingAddress && (
-            <AddressRow
-              label="Boarding address (on-chain)"
-              address={addresses?.boardingAddress}
-              badge="on-chain • Bitcoin"
-            />
-          )}
-          {bip21Uri && <AddressRow label="Full BIP21 URI" address={bip21Uri} badge="universal" />}
-          <p className="text-xs text-muted-foreground">
-            For Ark payments use the Ark address. For on-chain Bitcoin payments use the boarding
-            address.
-          </p>
-        </div>
+            </AlertDescription>
+          </Alert>
+        ) : (
+          <div className="space-y-6">
+            {options.length > 1 && (
+              <SegmentedControl
+                aria-label="Address type"
+                value={current.kind}
+                onValueChange={setSelected}
+                options={options.map((option) => ({ value: option.kind, label: option.tab }))}
+              />
+            )}
+
+            {/* QR codes need dark-on-light with a quiet zone to scan reliably, in both themes. */}
+            <div className="mx-auto w-full max-w-64 rounded-md bg-white p-4">
+              <QRCodeSVG
+                value={current.value}
+                size={256}
+                level="M"
+                marginSize={0}
+                bgColor="#ffffff"
+                fgColor="#000000"
+                title={`QR code of your ${current.label}`}
+                className="block h-auto w-full"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm font-medium">{current.label}</span>
+                <Badge action="muted" variant="outline" className="font-mono text-xs">
+                  {current.badge}
+                </Badge>
+              </div>
+              <InputGroup>
+                <InputGroupInput
+                  readOnly
+                  value={current.value}
+                  aria-label={current.label}
+                  className="font-mono text-xs"
+                />
+                <CopyButton text={current.value} label={current.label} />
+              </InputGroup>
+              <p className="text-sm text-muted-foreground">{current.hint}</p>
+            </div>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );

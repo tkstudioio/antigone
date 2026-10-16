@@ -1,6 +1,6 @@
 import { signedRoute } from "@/lib/auth/signed-route";
 import { addToCartSchema } from "@/validators";
-import { reserveKeys } from "@/lib/backend/mutations-cart";
+import { NotEnoughKeysError, ReservationCapError, reserveKeys } from "@/lib/backend/mutations-cart";
 
 export const POST = signedRoute({
   schema: addToCartSchema,
@@ -8,17 +8,24 @@ export const POST = signedRoute({
   handler: async ({ payload, pubkey }) => {
     const { productId, quantity, sellerPubkey, price } = payload;
 
-    const { reserved, expiresAt } = await reserveKeys({
-      buyerPubkey: pubkey,
-      productId,
-      quantity,
-      sellerPubkey,
-      price,
-    });
+    try {
+      const { reserved, expiresAt } = await reserveKeys({
+        buyerPubkey: pubkey,
+        productId,
+        quantity,
+        sellerPubkey,
+        price,
+      });
 
-    return Response.json({
-      reserved: reserved,
-      expiresAt: expiresAt.toISOString(),
-    });
+      return Response.json({
+        reserved: reserved,
+        expiresAt: expiresAt.toISOString(),
+      });
+    } catch (err) {
+      if (err instanceof NotEnoughKeysError || err instanceof ReservationCapError) {
+        return Response.json({ error: err.message }, { status: 409 });
+      }
+      throw err;
+    }
   },
 });

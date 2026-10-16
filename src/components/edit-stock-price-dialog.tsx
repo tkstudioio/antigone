@@ -13,6 +13,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
 import {
@@ -21,10 +22,16 @@ import {
   FormItem,
   FormLabel,
   FormControl,
+  FormDescription,
   FormMessage,
 } from "@/components/ui/form";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+  InputGroupText,
+} from "@/components/ui/input-group";
 
 type FormValues = {
   newPrice: number;
@@ -86,39 +93,57 @@ export function EditStockPriceDialog({ open, onOpenChange, productId, oldPrice }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-w-[calc(100%-2rem)] sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Edit price</DialogTitle>
+          <DialogDescription>
+            Current price:{" "}
+            <strong className="text-foreground tabular-nums">
+              {oldPrice.toLocaleString("en-US")} sats
+            </strong>{" "}
+            per key.
+          </DialogDescription>
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-4">
-            <div className="text-sm text-muted-foreground">
-              Current price: <strong>{oldPrice.toLocaleString("en-US")} sats</strong>
-            </div>
-
+          <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-6">
             <FormField
               control={form.control}
               name="newPrice"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>New price (sats)</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="number"
-                      min={1}
-                      step={1}
-                      {...field}
-                      onChange={(e) => field.onChange(parseInt(e.target.value, 10) || "")}
-                    />
-                  </FormControl>
+                  <FormLabel>New price</FormLabel>
+                  <InputGroup>
+                    <FormControl>
+                      <InputGroupInput
+                        type="number"
+                        inputMode="numeric"
+                        min={1}
+                        step={1}
+                        className="tabular-nums"
+                        {...field}
+                        onChange={(e) => field.onChange(parseInt(e.target.value, 10) || "")}
+                      />
+                    </FormControl>
+                    <InputGroupAddon align="inline-end">
+                      <InputGroupText>sats</InputGroupText>
+                    </InputGroupAddon>
+                  </InputGroup>
+                  <FormDescription>
+                    If you already sell this product at the new price, the two tiers are merged.
+                  </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
             />
 
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              <Button
+                type="button"
+                variant="outline"
+                action="muted"
+                onClick={() => onOpenChange(false)}
+              >
                 Cancel
               </Button>
               <Button type="submit" disabled={updatePrice.isPending}>

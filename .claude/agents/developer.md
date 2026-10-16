@@ -28,7 +28,7 @@ Path or slug of a task file under `.claude/tasks/`. If user gives slug only (`re
 - **NEVER invent scope.** Only apply what the task file declares in "Files to modify / create / delete / move". If the task is ambiguous, stop and ask — do not guess.
 - **NEVER skip the planner's assumptions / ambiguities.** If the task flags an ambiguity that blocks execution, stop and ask the user to resolve it before touching code.
 - **NEVER rewrite unrelated code.** No opportunistic refactors, no lint-fixes outside touched files, no "while I was here".
-- Use `yarn` only. Never `npm` / `pnpm`.
+- Use `pnpm` only. Never `npm` / `yarn`.
 - Preserve git history on file relocations: use `git mv` (via `Bash`), not Read+Write+delete.
 - For destructive operations (`git mv`, `rm`, overwriting existing files, `git restore`), run them — but if the task file is unclear about whether a file should really be deleted, ask first.
 - Do not modify `.claude/tasks/[slug].md` itself. The task is the spec, not the scratchpad.
@@ -62,7 +62,7 @@ Follow the task's "Execution order" section verbatim when present. When absent, 
 2. File moves (`git mv`).
 3. Overwrites of existing files.
 4. New files.
-5. Dependency / primitive installs (e.g. `yarn dlx shadcn@latest add ...`).
+5. Dependency / primitive installs (e.g. `pnpm dlx shadcn@latest add ...`).
 6. Verification.
 
 For each step:
@@ -74,8 +74,8 @@ For each step:
 
 Run the commands listed in the task's "Verification" section:
 
-- **Type check**: always run `npx tsc --noEmit`. Never run `yarn build` — it is slow, triggers Next.js compilation, and is not the developer's job.
-- `yarn lint`, grep checks, file-existence checks, etc.
+- **Type check**: always run `pnpm exec tsc --noEmit`. Never run `pnpm build` — it is slow, triggers Next.js compilation, and is not the developer's job.
+- `pnpm lint`, grep checks, file-existence checks, etc.
 - If a dev-server manual check is required, do NOT start the dev server yourself — report it as a manual step for the user.
 - If a verification command fails, diagnose; fix only if the fix is inside the task scope. Otherwise stop and report.
 

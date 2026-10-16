@@ -6,17 +6,15 @@ import { match } from "ts-pattern";
 import { parseAsInteger, parseAsString, parseAsStringLiteral, useQueryStates } from "nuqs";
 import { useDebounceValue } from "usehooks-ts";
 import {
-  ArrowUpDown,
   Boxes,
   ChevronLeft,
   ChevronRight,
-  Coins,
   Layers,
   PackageCheck,
+  Plus,
   Search,
   SlidersHorizontal,
   X,
-  type LucideIcon,
 } from "lucide-react";
 
 import type { SortDir, StockProduct, StockSortColumn } from "@/hooks/stocks";
@@ -26,9 +24,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Skeleton } from "@/components/ui/skeleton";
-import { H1 } from "@/components/ui/typography";
-import { CreateStockSheet } from "@/components/create-stock-sheet";
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { H1, P } from "@/components/ui/typography";
+import { Card } from "@/components/ui/card";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { SegmentedControl } from "@/components/ui/segmented-control";
+import { Satoshi } from "@/components/icons/satoshi";
+import { CreateStockDialog } from "@/components/create-stock-dialog";
 import {
   InputGroup,
   InputGroupAddon,
@@ -36,15 +37,10 @@ import {
   InputGroupInput,
 } from "@/components/ui/input-group";
 
-const stockSortOptions: {
-  label: string;
-  sort: StockSortColumn;
-  dir: SortDir;
-  icon: LucideIcon;
-}[] = [
-  { label: "Name", sort: "name", dir: "asc", icon: ArrowUpDown },
-  { label: "Available", sort: "availableKeysCount", dir: "desc", icon: PackageCheck },
-  { label: "Lowest price", sort: "lowestPrice", dir: "asc", icon: Coins },
+const stockSortOptions: { label: string; sort: StockSortColumn; dir: SortDir }[] = [
+  { label: "Name", sort: "name", dir: "asc" },
+  { label: "Available", sort: "availableKeysCount", dir: "desc" },
+  { label: "Price", sort: "lowestPrice", dir: "asc" },
 ];
 
 const PRICE_FILTER_MAX = 10_000_000;
@@ -95,212 +91,205 @@ export default function StocksPage() {
   }
 
   return (
-    <>
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="space-y-1">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Warehouse
-          </p>
-          <H1>Your stocks</H1>
+    <div className="mx-auto max-w-5xl space-y-8 pb-16">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="space-y-2">
+          <span className="font-mono text-xs tracking-widest text-muted-foreground uppercase">
+            Seller
+          </span>
+          <H1 className="text-3xl">Your stocks</H1>
+          <P className="max-w-xl text-pretty text-muted-foreground">
+            The license keys you sell, grouped by product. Codes are encrypted in your browser
+            before they are uploaded.
+          </P>
         </div>
 
-        <Button onClick={() => setSheetOpen(true)} className="w-full sm:w-auto">
-          <Boxes className="size-4" />
+        <Button onClick={() => setSheetOpen(true)} className="w-full font-semibold sm:w-auto">
+          <Plus />
           Add stock
         </Button>
 
-        <CreateStockSheet open={sheetOpen} onOpenChange={setSheetOpen} mode="create" />
+        <CreateStockDialog open={sheetOpen} onOpenChange={setSheetOpen} mode="create" />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]">
-        <Card className="h-fit">
-          <CardHeader className="gap-4">
-            <div className="flex items-center gap-2 text-sm font-semibold">
-              <SlidersHorizontal className="size-4 text-primary" />
-              Filters
-            </div>
-          </CardHeader>
+      {/* Toolbar */}
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+        <InputGroup className="lg:max-w-sm">
+          <InputGroupAddon>
+            <Search />
+          </InputGroupAddon>
+          <InputGroupInput
+            placeholder="Search product"
+            aria-label="Search product"
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+          />
+          {(inputValue.length > 0 || query.search.length > 0) && (
+            <InputGroupAddon align="inline-end">
+              <InputGroupButton
+                aria-label="Clear search"
+                onClick={() => {
+                  setInputValue("");
+                  setQuery({ search: "", page: 1 });
+                }}
+              >
+                <X />
+              </InputGroupButton>
+            </InputGroupAddon>
+          )}
+        </InputGroup>
 
-          <CardContent className="space-y-4">
-            <FilterSection label="Name">
-              <InputGroup>
-                <InputGroupAddon>
-                  <Search className="size-4" />
-                </InputGroupAddon>
-                <InputGroupInput
-                  placeholder="Search product"
-                  value={inputValue}
-                  onChange={(e) => setInputValue(e.target.value)}
+        <div className="flex flex-wrap items-center gap-2 lg:ml-auto">
+          <SegmentedControl
+            aria-label="Sort by"
+            className="flex-1 sm:flex-none"
+            value={query.sort}
+            onValueChange={(sort) => {
+              const option = stockSortOptions.find((o) => o.sort === sort);
+              if (option) setQuery({ sort: option.sort, dir: option.dir, page: 1 });
+            }}
+            options={stockSortOptions.map((o) => ({ value: o.sort, label: o.label }))}
+          />
+
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" action="muted">
+                <SlidersHorizontal />
+                Filters
+                {hasRangeFilters && (
+                  <>
+                    <span className="size-2 rounded-full bg-positive" aria-hidden />
+                    <span className="sr-only">(active)</span>
+                  </>
+                )}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-80 space-y-6">
+              <FilterSection
+                label="Lowest price"
+                value={`${formatPrice(priceRange[0])} – ${formatPrice(priceRange[1])} sats`}
+              >
+                <Slider
+                  min={0}
+                  max={PRICE_FILTER_MAX}
+                  step={50_000}
+                  value={priceRange}
+                  aria-label="Lowest price range"
+                  onValueChange={(value) =>
+                    setPriceRange([value[0] ?? 0, value[1] ?? PRICE_FILTER_MAX])
+                  }
                 />
-                <InputGroupButton
-                  aria-label="Clear search"
-                  disabled={inputValue.length === 0 && query.search.length === 0}
-                  onClick={() => {
-                    setInputValue("");
-                    setQuery({ search: "", page: 1 });
-                  }}
-                >
-                  <X />
-                </InputGroupButton>
-              </InputGroup>
-            </FilterSection>
+              </FilterSection>
+              <FilterSection
+                label="Available keys"
+                value={`${keysRange[0].toLocaleString("en-US")} – ${keysRange[1].toLocaleString("en-US")}`}
+              >
+                <Slider
+                  min={0}
+                  max={KEYS_FILTER_MAX}
+                  step={1}
+                  value={keysRange}
+                  aria-label="Available keys range"
+                  onValueChange={(value) =>
+                    setKeysRange([value[0] ?? 0, value[1] ?? KEYS_FILTER_MAX])
+                  }
+                />
+              </FilterSection>
+              <p className="text-xs text-muted-foreground">
+                Ranges filter the products on the current page.
+              </p>
+            </PopoverContent>
+          </Popover>
 
-            <FilterSection
-              label="Price"
-              value={`${formatPrice(priceRange[0])} - ${formatPrice(priceRange[1])}`}
-            >
-              <Slider
-                min={0}
-                max={PRICE_FILTER_MAX}
-                step={50_000}
-                value={priceRange}
-                onValueChange={(value) =>
-                  setPriceRange([value[0] ?? 0, value[1] ?? PRICE_FILTER_MAX])
-                }
-              />
-            </FilterSection>
-
-            <FilterSection
-              label="Available keys"
-              value={`${keysRange[0].toLocaleString("en-US")} - ${keysRange[1].toLocaleString("en-US")}`}
-            >
-              <Slider
-                min={0}
-                max={KEYS_FILTER_MAX}
-                step={1}
-                value={keysRange}
-                onValueChange={(value) =>
-                  setKeysRange([value[0] ?? 0, value[1] ?? KEYS_FILTER_MAX])
-                }
-              />
-            </FilterSection>
-          </CardContent>
-
-          <CardContent className="space-y-2 border-t border-border/50 pt-4">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Sort by
-            </p>
-            <div className="grid gap-1">
-              {stockSortOptions.map((option) => {
-                const Icon = option.icon;
-                const active = query.sort === option.sort && query.dir === option.dir;
-
-                return (
-                  <Button
-                    key={`${option.sort}-${option.dir}`}
-                    type="button"
-                    variant={active ? "solid" : "ghost"}
-                    action={active ? "primary" : "muted"}
-                    size="sm"
-                    className="justify-start"
-                    onClick={() => setQuery({ sort: option.sort, dir: option.dir, page: 1 })}
-                  >
-                    <Icon className="size-3.5" />
-                    {option.label}
-                  </Button>
-                );
-              })}
-            </div>
-          </CardContent>
-
-          <CardFooter>
-            <Button
-              className="w-full"
-              variant="ghost"
-              action="negative"
-              disabled={!hasActiveFilters}
-              onClick={clearFilters}
-            >
-              <X className="size-4" />
+          {hasActiveFilters && (
+            <Button variant="ghost" action="muted" onClick={clearFilters}>
+              <X />
               Clear
             </Button>
-          </CardFooter>
-        </Card>
+          )}
+        </div>
+      </div>
 
-        <section className="min-w-0 space-y-4">
-          {match(stocksQuery)
-            .with({ isPending: true }, () => <StockCardsSkeleton />)
-            .with({ isError: true }, () => (
-              <Card>
-                <CardContent>
-                  <p className="text-sm text-destructive">Error loading stocks.</p>
-                </CardContent>
-              </Card>
-            ))
-            .with({ isSuccess: true }, ({ data }) => {
-              const { data: rows, total, pageSize } = data;
-              const filteredRows = rows.filter(
-                (row) =>
-                  row.lowestPrice >= priceRange[0] &&
-                  row.lowestPrice <= priceRange[1] &&
-                  row.availableKeysCount >= keysRange[0] &&
-                  row.availableKeysCount <= keysRange[1]
-              );
-              const totalPages = Math.max(1, Math.ceil(total / pageSize));
-              const visibleTotal = hasRangeFilters ? filteredRows.length : total;
+      <section aria-label="Stocks" className="space-y-4">
+        {match(stocksQuery)
+          .with({ isPending: true }, () => <StockRowsSkeleton />)
+          .with({ isError: true }, () => (
+            <p className="text-sm text-destructive">Error loading stocks.</p>
+          ))
+          .with({ isSuccess: true }, ({ data }) => {
+            const { data: rows, total, pageSize } = data;
+            const filteredRows = rows.filter(
+              (row) =>
+                row.lowestPrice >= priceRange[0] &&
+                row.lowestPrice <= priceRange[1] &&
+                row.availableKeysCount >= keysRange[0] &&
+                row.availableKeysCount <= keysRange[1]
+            );
+            const totalPages = Math.max(1, Math.ceil(total / pageSize));
+            const visibleTotal = hasRangeFilters ? filteredRows.length : total;
 
-              if (filteredRows.length === 0) {
-                return (
-                  <EmptyStocksState
-                    hasSearch={query.search.length > 0 || hasRangeFilters}
-                    onCreate={() => setSheetOpen(true)}
-                  />
-                );
-              }
-
+            if (filteredRows.length === 0) {
               return (
-                <>
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-                    <div>
-                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                        Active stocks
-                      </p>
-                      <p className="text-2xl font-semibold">
-                        {visibleTotal.toLocaleString("en-US")} product
-                        {visibleTotal === 1 ? "" : "s"}
-                      </p>
-                    </div>
-                    <Badge variant="outline" className="h-7 px-3">
+                <EmptyStocksState
+                  hasSearch={query.search.length > 0 || hasRangeFilters}
+                  onCreate={() => setSheetOpen(true)}
+                />
+              );
+            }
+
+            return (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  {visibleTotal.toLocaleString("en-US")} product{visibleTotal === 1 ? "" : "s"}
+                </p>
+
+                <Card className="space-y-0 py-0">
+                  <ul className="divide-y">
+                    {filteredRows.map((row) => (
+                      <li key={row.productId}>
+                        <StockProductRow stock={row} />
+                      </li>
+                    ))}
+                  </ul>
+                </Card>
+
+                {totalPages > 1 && (
+                  <nav
+                    aria-label="Pagination"
+                    className="flex items-center justify-between gap-4 sm:justify-end"
+                  >
+                    <Button
+                      variant="outline"
+                      action="muted"
+                      size="sm"
+                      disabled={query.page <= 1}
+                      onClick={() => setQuery({ page: query.page - 1 })}
+                    >
+                      <ChevronLeft />
+                      Previous
+                    </Button>
+                    <span className="text-sm text-muted-foreground tabular-nums">
                       Page {query.page.toLocaleString("en-US")} of{" "}
                       {totalPages.toLocaleString("en-US")}
-                    </Badge>
-                  </div>
-
-                  <div className="space-y-4">
-                    {filteredRows.map((row) => (
-                      <StockProductCard key={row.productId} stock={row} />
-                    ))}
-                  </div>
-
-                  {totalPages > 1 && (
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={query.page <= 1}
-                        onClick={() => setQuery({ page: query.page - 1 })}
-                      >
-                        <ChevronLeft className="size-4" />
-                        Previous
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={query.page >= totalPages}
-                        onClick={() => setQuery({ page: query.page + 1 })}
-                      >
-                        Next
-                        <ChevronRight className="size-4" />
-                      </Button>
-                    </div>
-                  )}
-                </>
-              );
-            })
-            .otherwise(() => null)}
-        </section>
-      </div>
-    </>
+                    </span>
+                    <Button
+                      variant="outline"
+                      action="muted"
+                      size="sm"
+                      disabled={query.page >= totalPages}
+                      onClick={() => setQuery({ page: query.page + 1 })}
+                    >
+                      Next
+                      <ChevronRight />
+                    </Button>
+                  </nav>
+                )}
+              </>
+            );
+          })
+          .otherwise(() => null)}
+      </section>
+    </div>
   );
 }
 
@@ -314,13 +303,13 @@ function FilterSection({
   children: ReactNode;
 }) {
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       <div className="flex min-w-0 items-center justify-between gap-2">
-        <p className="shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          {label}
-        </p>
+        <p className="shrink-0 text-sm font-medium">{label}</p>
         {value ? (
-          <span className="min-w-0 truncate text-right text-xs text-muted-foreground">{value}</span>
+          <span className="min-w-0 truncate text-right font-mono text-xs text-muted-foreground">
+            {value}
+          </span>
         ) : null}
       </div>
       {children}
@@ -328,169 +317,123 @@ function FilterSection({
   );
 }
 
-function StockProductCard({ stock }: { stock: StockProduct }) {
+function StockProductRow({ stock }: { stock: StockProduct }) {
   const availability = getAvailability(stock.availableKeysCount);
-  const priceSpread = stock.highestPrice - stock.lowestPrice;
-  const hasPriceRange = priceSpread > 0;
-  const averageKeysPerTier = Math.max(1, Math.round(stock.availableKeysCount / stock.priceTiers));
+  const hasPriceRange = stock.highestPrice > stock.lowestPrice;
 
   return (
-    <Card className="border-border/70 bg-card/90 transition hover:-translate-y-0.5 hover:ring-1 hover:ring-primary/35">
-      <CardHeader className="gap-4">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex min-w-0 items-start gap-4">
-            <div className="flex size-11 shrink-0 items-center justify-center rounded-md border border-primary/30 bg-primary/10 text-primary">
-              <Boxes className="size-5" />
-            </div>
-            <div className="min-w-0 space-y-2">
-              <div className="min-w-0">
-                <CardTitle className="truncate text-xl">
-                  <Link href={`/stocks/${stock.slug}`} className="hover:text-primary">
-                    {stock.name}
-                  </Link>
-                </CardTitle>
-              </div>
-              <div className="flex flex-wrap gap-1">
-                <Badge variant="outline" action="muted" className="gap-1">
-                  <Layers className="size-3" />
-                  {stock.priceTiers.toLocaleString("en-US")}{" "}
-                  {stock.priceTiers === 1 ? "tier" : "tiers"}
-                </Badge>
-                <Badge variant="outline" className={availability.badgeClassName}>
-                  {availability.label}
-                </Badge>
-              </div>
-            </div>
+    <Link
+      href={`/stocks/${stock.slug}`}
+      className="group flex flex-col gap-4 p-4 outline-none transition-colors hover:bg-muted/50 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:ring-inset sm:flex-row sm:items-center sm:p-5"
+    >
+      <div className="flex min-w-0 flex-1 items-center gap-4">
+        <span
+          aria-hidden
+          className="flex size-10 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground [&_svg]:size-5"
+        >
+          <Boxes />
+        </span>
+        <div className="min-w-0 space-y-1.5">
+          <p className="truncate font-semibold group-hover:underline">{stock.name}</p>
+          <div className="flex flex-wrap gap-1.5">
+            <Badge variant="outline" action="muted" className="items-center gap-1 text-xs">
+              <Layers className="size-3" aria-hidden />
+              {stock.priceTiers.toLocaleString("en-US")} {stock.priceTiers === 1 ? "tier" : "tiers"}
+            </Badge>
+            <Badge
+              variant="outline"
+              action="muted"
+              className={cn("text-xs", availability.badgeClassName)}
+            >
+              {availability.label}
+            </Badge>
           </div>
-
-          <Button asChild variant="outline" size="sm" className="w-full sm:w-auto">
-            <Link href={`/stocks/${stock.slug}`}>
-              Manage
-              <ChevronRight className="size-4" />
-            </Link>
-          </Button>
         </div>
-      </CardHeader>
+      </div>
 
-      <CardContent className="grid gap-2 md:grid-cols-3">
-        <StockMetric
-          icon={PackageCheck}
-          label="Keys"
-          value={stock.availableKeysCount.toLocaleString("en-US")}
-          detail={`${averageKeysPerTier.toLocaleString("en-US")} per tier`}
-        />
-        <StockMetric
-          icon={Coins}
-          label="Lowest price"
-          value={formatPrice(stock.lowestPrice)}
-          detail={hasPriceRange ? `Max ${formatPrice(stock.highestPrice)}` : "Single price"}
-        />
-        <StockMetric
-          icon={ArrowUpDown}
-          label="Range"
-          value={hasPriceRange ? formatPrice(priceSpread) : "0 sats"}
-          detail={hasPriceRange ? "Price difference" : "No spread"}
-        />
-      </CardContent>
-
-      <CardFooter className="flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Stock
-          </span>
-          <div className="grid w-28 grid-cols-5 gap-1" aria-hidden="true">
+      <dl className="grid grid-cols-2 gap-4 text-sm sm:w-80 sm:shrink-0">
+        <div className="space-y-1.5">
+          <dt className="text-xs text-muted-foreground">Available</dt>
+          <dd className="font-semibold tabular-nums">
+            {stock.availableKeysCount.toLocaleString("en-US")} key
+            {stock.availableKeysCount === 1 ? "" : "s"}
+          </dd>
+          <dd className="grid w-24 grid-cols-5 gap-1" aria-hidden>
             {Array.from({ length: 5 }).map((_, index) => (
               <span
                 key={index}
                 className={cn(
-                  "h-1.5 rounded-full",
+                  "h-1 rounded-full",
                   index < availability.blocks ? availability.barClassName : "bg-foreground/10"
                 )}
               />
             ))}
-          </div>
+          </dd>
         </div>
-        <p className="text-xs text-muted-foreground">
-          From {formatPrice(stock.lowestPrice)}
-          {hasPriceRange ? ` to ${formatPrice(stock.highestPrice)}` : ""}
-        </p>
-      </CardFooter>
-    </Card>
+        <div className="space-y-1.5">
+          <dt className="text-xs text-muted-foreground">
+            {hasPriceRange ? "Price range" : "Price"}
+          </dt>
+          <dd className="flex items-center font-semibold tabular-nums">
+            <Satoshi className="size-4 shrink-0" aria-hidden />
+            {formatPrice(stock.lowestPrice)}
+            {hasPriceRange && ` – ${formatPrice(stock.highestPrice)}`}
+            <span className="sr-only"> sats</span>
+          </dd>
+        </div>
+      </dl>
+
+      <ChevronRight
+        className="hidden size-4 shrink-0 text-muted-foreground transition-transform motion-safe:group-hover:translate-x-0.5 sm:block"
+        aria-hidden
+      />
+    </Link>
   );
 }
 
-function StockMetric({
-  icon: Icon,
-  label,
-  value,
-  detail,
-}: {
-  icon: LucideIcon;
-  label: string;
-  value: string;
-  detail: string;
-}) {
+function StockRowsSkeleton() {
   return (
-    <div className="min-w-0 rounded-md border border-border/60 bg-background/40 p-4">
-      <div className="mb-2 flex items-center gap-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        <Icon className="size-3.5" />
-        {label}
-      </div>
-      <p className="truncate text-lg font-semibold">{value}</p>
-      <p className="truncate text-xs text-muted-foreground">{detail}</p>
-    </div>
-  );
-}
-
-function StockCardsSkeleton() {
-  return (
-    <div className="space-y-4">
+    <Card className="space-y-0 divide-y py-0" aria-busy aria-label="Loading stocks">
       {Array.from({ length: 4 }).map((_, index) => (
-        <Card key={index}>
-          <CardHeader>
-            <div className="flex items-start gap-4">
-              <Skeleton className="size-11 rounded-md" />
-              <div className="flex-1 space-y-2">
-                <Skeleton className="h-6 w-2/5" />
-                <Skeleton className="h-5 w-1/4" />
-              </div>
-              <Skeleton className="h-9 w-24" />
-            </div>
-          </CardHeader>
-          <CardContent className="grid gap-2 md:grid-cols-3">
-            <Skeleton className="h-24" />
-            <Skeleton className="h-24" />
-            <Skeleton className="h-24" />
-          </CardContent>
-        </Card>
+        <div key={index} className="flex items-center gap-4 p-5">
+          <Skeleton className="size-10 shrink-0" />
+          <div className="flex-1 space-y-2">
+            <Skeleton className="h-5 w-2/5" />
+            <Skeleton className="h-4 w-1/4" />
+          </div>
+          <Skeleton className="hidden h-10 w-80 sm:block" />
+        </div>
       ))}
-    </div>
+    </Card>
   );
 }
 
 function EmptyStocksState({ hasSearch, onCreate }: { hasSearch: boolean; onCreate: () => void }) {
   return (
-    <Card>
-      <CardContent className="flex flex-col items-center gap-4 py-16 text-center">
-        <div className="flex size-12 items-center justify-center rounded-md border border-primary/30 bg-primary/10 text-primary">
-          <PackageCheck className="size-6" />
-        </div>
-        <div className="space-y-1">
-          <p className="text-xl font-semibold">
-            {hasSearch ? "No stock found" : "You don't have any stock yet"}
-          </p>
-          <p className="text-sm text-muted-foreground">
-            {hasSearch ? "Try a different product name." : "Add your first keys to start selling."}
-          </p>
-        </div>
-        {!hasSearch && (
-          <Button onClick={onCreate}>
-            <Boxes className="size-4" />
-            Add stock
-          </Button>
-        )}
-      </CardContent>
-    </Card>
+    <div className="flex flex-col items-center gap-4 rounded-md border border-dashed px-6 py-16 text-center">
+      <span
+        aria-hidden
+        className="flex size-10 items-center justify-center rounded-md bg-muted text-muted-foreground [&_svg]:size-5"
+      >
+        <PackageCheck />
+      </span>
+      <div className="space-y-1">
+        <p className="font-semibold">
+          {hasSearch ? "No stock found" : "You don't have any stock yet"}
+        </p>
+        <p className="text-sm text-muted-foreground">
+          {hasSearch
+            ? "Try a different product name or widen the filters."
+            : "Add your first keys to start selling."}
+        </p>
+      </div>
+      {!hasSearch && (
+        <Button onClick={onCreate}>
+          <Plus />
+          Add stock
+        </Button>
+      )}
+    </div>
   );
 }
 
@@ -499,7 +442,7 @@ function getAvailability(count: number) {
     return {
       label: "Low stock",
       blocks: 1,
-      badgeClassName: "border-negative/40 bg-negative/15",
+      badgeClassName: "border-negative text-negative",
       barClassName: "bg-negative",
     };
   }
@@ -508,7 +451,7 @@ function getAvailability(count: number) {
     return {
       label: "Medium stock",
       blocks: 2,
-      badgeClassName: "border-warning/40 bg-warning/15",
+      badgeClassName: "border-warning text-warning",
       barClassName: "bg-warning",
     };
   }
@@ -517,7 +460,7 @@ function getAvailability(count: number) {
     return {
       label: "Good stock",
       blocks: 4,
-      badgeClassName: "border-positive/40 bg-positive/15",
+      badgeClassName: "border-positive text-positive",
       barClassName: "bg-positive",
     };
   }
@@ -525,7 +468,7 @@ function getAvailability(count: number) {
   return {
     label: "High stock",
     blocks: 5,
-    badgeClassName: "border-positive/40 bg-positive/20",
+    badgeClassName: "border-positive text-positive",
     barClassName: "bg-positive",
   };
 }

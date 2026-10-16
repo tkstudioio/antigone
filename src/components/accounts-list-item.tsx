@@ -1,13 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2, Trash2 } from "lucide-react";
+import { ChevronRight, Loader2, Trash2 } from "lucide-react";
 import { Identicon } from "@/components/identicon";
 import { useLoginMutation } from "@/hooks/accounts";
 import { useRemoveAccount } from "@/hooks/accounts";
 import { StoredAccount } from "@/types/account";
 import { Button } from "./ui/button";
-import { Large, P } from "./ui/typography";
 import { PassphraseDialog } from "@/components/passphrase-dialog";
 import {
   AlertDialog,
@@ -31,20 +30,31 @@ export function AccountListItem({ account }: { account: StoredAccount }) {
 
   return (
     <>
-      <div className="flex items-center gap-2">
+      <div className="group/account flex items-center gap-2 pr-2 transition-colors hover:bg-muted/50">
         <Button
           type="button"
           onClick={() => setOpen(true)}
           variant={"ghost"}
           action={"muted"}
-          className="flex-1 justify-start gap-4 py-4! px-0!"
+          aria-label={`Sign in as ${account.username}`}
+          className="min-w-0 flex-1 justify-start gap-4 rounded-none p-4 text-left whitespace-normal text-foreground hover:bg-transparent focus-visible:ring-inset"
         >
           <Identicon value={account.pubkey} />
-          <div className="text-left">
-            <Large className="text-foreground">{account.username}</Large>
-            <P className="truncate">{serverUrl}</P>
+          <div className="min-w-0 flex-1">
+            <p className="truncate font-semibold">{account.username}</p>
+            <p className="truncate font-mono text-xs text-muted-foreground">
+              {account.pubkey.slice(0, 10)}…{account.pubkey.slice(-6)}
+              {serverUrl && ` · ${serverUrl.replace(/^https?:\/\//, "")}`}
+            </p>
           </div>
-          {isPending && <Loader2 className="size-4 animate-spin text-muted-foreground" />}
+          {isPending ? (
+            <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" aria-hidden />
+          ) : (
+            <ChevronRight
+              className="size-4 shrink-0 text-muted-foreground transition-transform motion-safe:group-hover/account:translate-x-0.5"
+              aria-hidden
+            />
+          )}
         </Button>
 
         <AlertDialog>
@@ -54,7 +64,8 @@ export function AccountListItem({ account }: { account: StoredAccount }) {
               variant={"ghost"}
               action={"negative"}
               size={"md"}
-              aria-label={`Remove ${account.username}`}
+              className="px-2.5"
+              aria-label={`Remove ${account.username} from this device`}
               disabled={removeAccount.isPending}
             >
               {removeAccount.isPending ? (

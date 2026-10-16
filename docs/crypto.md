@@ -21,7 +21,7 @@ what Ark can attest. Four distinct areas, one per L3 file.
 | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | [crypto/signing.md](./crypto/signing.md)           | Schnorr auth, signed mutation envelope v2 (method+path+ts+nonce+bodySha256), `signedRoute`, `SignedAction` evidence + anti-replay. |
 | [crypto/messaging.md](./crypto/messaging.md)       | E2E encryption of chat messages (ECIES + CEK + `MessageKey`), `grant-admin`, wrapping in a dispute.                                |
-| [crypto/at-rest.md](./crypto/at-rest.md)           | At-rest encryption: license key codes (AES-GCM + `code_hash`) and MinIO attachments (proxy/decryption).                            |
+| [crypto/at-rest.md](./crypto/at-rest.md)           | At-rest encryption: license key codes (AES-GCM + `code_hash`) and S3 attachments (proxy/decryption).                               |
 | [crypto/verification.md](./crypto/verification.md) | Client-side verification of server data: signed actions, chat hash chain, order terms and verdict, Ark facts, arbiter pin (TOFU).  |
 
 > The derivation of user keys (BIP39 mnemonic + passphrase → privkey) and the local **vault**

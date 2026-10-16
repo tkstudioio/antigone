@@ -3,44 +3,44 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Colors come from the TKStudio Design System (Figma) primitives; the trailing comment names the
+   primitive each value resolves to. Dark is re-picked from the same primitives to mirror light. */
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(1 0 0);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.81 0.1 252);
-  --chart-2: oklch(0.62 0.19 260);
-  --chart-3: oklch(0.55 0.22 263);
-  --chart-4: oklch(0.49 0.22 264);
-  --chart-5: oklch(0.42 0.18 266);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
-  --font-sans: Mulish, ui-sans-serif, sans-serif, system-ui;
-  --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
-  --font-mono:
-    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
-    monospace;
+  --background: oklch(0.985 0.003 264.5); /* gray/50 */
+  --foreground: oklch(0.295 0.041 266.1); /* gray/900 */
+  --card: oklch(0.918 0.01 261.8); /* gray/100 */
+  --card-foreground: oklch(0.295 0.041 266.1); /* gray/900 */
+  --popover: oklch(1 0 0); /* gray/0 */
+  --popover-foreground: oklch(0.295 0.041 266.1); /* gray/900 */
+  --primary: oklch(0.382 0.108 327.4); /* purple/600 */
+  --primary-foreground: oklch(0.985 0.003 264.5); /* gray/50 */
+  --secondary: oklch(0.851 0.019 266); /* gray/200 */
+  --secondary-foreground: oklch(0.295 0.041 266.1); /* gray/900 */
+  --muted: oklch(0.918 0.01 261.8); /* gray/100 */
+  --muted-foreground: oklch(0.472 0.041 267.2); /* gray/700 */
+  --accent: oklch(0.851 0.019 266); /* gray/200 */
+  --accent-foreground: oklch(0.295 0.041 266.1); /* gray/900 */
+  --destructive: oklch(0.493 0.146 23.3); /* red/600 */
+  --destructive-foreground: oklch(0.985 0.003 264.5); /* gray/50 */
+  --border: oklch(0.649 0.041 265.7); /* gray/500 */
+  --input: oklch(0.384 0.042 266.2); /* gray/800 */
+  --ring: oklch(0.436 0.112 327.3); /* purple/500 */
+  --chart-1: oklch(0.382 0.108 327.4); /* purple/600 */
+  --chart-2: oklch(0.752 0.166 62.6); /* orange/500 */
+  --chart-3: oklch(0.58 0.118 237.5); /* sky/600 */
+  --chart-4: oklch(0.542 0.133 155.4); /* green/600 */
+  --chart-5: oklch(0.578 0.118 69.3); /* amber/600 */
+  --sidebar: oklch(0.918 0.01 261.8); /* gray/100 */
+  --sidebar-foreground: oklch(0.295 0.041 266.1); /* gray/900 */
+  --sidebar-primary: oklch(0.382 0.108 327.4); /* purple/600 */
+  --sidebar-primary-foreground: oklch(0.985 0.003 264.5); /* gray/50 */
+  --sidebar-accent: oklch(0.851 0.019 266); /* gray/200 */
+  --sidebar-accent-foreground: oklch(0.295 0.041 266.1); /* gray/900 */
+  --sidebar-border: oklch(0.649 0.041 265.7); /* gray/500 */
+  --sidebar-ring: oklch(0.436 0.112 327.3); /* purple/500 */
+  --font-sans: var(--font-noto-sans), ui-sans-serif, sans-serif, system-ui;
+  --font-serif: var(--font-cinzel), ui-serif, Georgia, serif;
+  --font-mono: var(--font-noto-sans-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
   --radius: 0.625rem;
   --shadow-x: 0;
   --shadow-y: 1px;
@@ -61,43 +61,41 @@
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.269 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.3424 0.092 133.1976);
-  --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(0.228 0.0615 140.0605);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.3211 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(0.275 0 0);
-  --input: oklch(0.325 0 0);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.81 0.1 252);
-  --chart-2: oklch(0.62 0.19 260);
-  --chart-3: oklch(0.55 0.22 263);
-  --chart-4: oklch(0.49 0.22 264);
-  --chart-5: oklch(0.42 0.18 266);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(0.275 0 0);
-  --sidebar-ring: oklch(0.439 0 0);
-  --font-sans: Mulish, ui-sans-serif, sans-serif, system-ui;
-  --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
-  --font-mono:
-    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
-    monospace;
+  --background: oklch(0.208 0.04 265.8); /* gray/950 */
+  --foreground: oklch(0.985 0.003 264.5); /* gray/50 */
+  --card: oklch(0.295 0.041 266.1); /* gray/900 */
+  --card-foreground: oklch(0.985 0.003 264.5); /* gray/50 */
+  --popover: oklch(0.295 0.041 266.1); /* gray/900 */
+  --popover-foreground: oklch(0.985 0.003 264.5); /* gray/50 */
+  --primary: oklch(0.649 0.099 327.3); /* purple/300 */
+  --primary-foreground: oklch(0.208 0.04 265.8); /* gray/950 */
+  --secondary: oklch(0.384 0.042 266.2); /* gray/800 */
+  --secondary-foreground: oklch(0.985 0.003 264.5); /* gray/50 */
+  --muted: oklch(0.295 0.041 266.1); /* gray/900 */
+  --muted-foreground: oklch(0.718 0.034 266.1); /* gray/400 */
+  --accent: oklch(0.384 0.042 266.2); /* gray/800 */
+  --accent-foreground: oklch(0.985 0.003 264.5); /* gray/50 */
+  --destructive: oklch(0.653 0.146 22.9); /* red/400 */
+  --destructive-foreground: oklch(0.208 0.04 265.8); /* gray/950 */
+  --border: oklch(0.472 0.041 267.2); /* gray/700 */
+  --input: oklch(0.718 0.034 266.1); /* gray/400 */
+  --ring: oklch(0.757 0.082 327.7); /* purple/200 */
+  --chart-1: oklch(0.649 0.099 327.3); /* purple/300 */
+  --chart-2: oklch(0.752 0.166 62.6); /* orange/500 */
+  --chart-3: oklch(0.742 0.117 237.1); /* sky/400 */
+  --chart-4: oklch(0.638 0.148 155.4); /* green/500 */
+  --chart-5: oklch(0.682 0.122 69.4); /* amber/500 */
+  --sidebar: oklch(0.295 0.041 266.1); /* gray/900 */
+  --sidebar-foreground: oklch(0.985 0.003 264.5); /* gray/50 */
+  --sidebar-primary: oklch(0.649 0.099 327.3); /* purple/300 */
+  --sidebar-primary-foreground: oklch(0.208 0.04 265.8); /* gray/950 */
+  --sidebar-accent: oklch(0.384 0.042 266.2); /* gray/800 */
+  --sidebar-accent-foreground: oklch(0.985 0.003 264.5); /* gray/50 */
+  --sidebar-border: oklch(0.384 0.042 266.2); /* gray/800 */
+  --sidebar-ring: oklch(0.757 0.082 327.7); /* purple/200 */
+  --font-sans: var(--font-noto-sans), ui-sans-serif, sans-serif, system-ui;
+  --font-serif: var(--font-cinzel), ui-serif, Georgia, serif;
+  --font-mono: var(--font-noto-sans-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
   --radius: 0.625rem;
   --shadow-x: 0;
   --shadow-y: 1px;
@@ -135,15 +133,15 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
-  /* Semantic status colors. The neutral palette above has no success/warning hue, so these are
-     defined outright; `destructive` stays the token for irreversible actions, `negative` the one
-     for a failed/refused state. Consumed by the `action` variants of button, badge and alert. */
-  --color-positive: oklch(0.63 0.115 145);
-  --color-positive-foreground: oklch(0.985 0 0);
-  --color-negative: oklch(0.55 0.13 22);
-  --color-negative-foreground: oklch(0.985 0 0);
-  --color-warning: oklch(0.78 0.11 65);
-  --color-warning-foreground: oklch(0.205 0 0);
+  /* Semantic status colors (one value for both modes). `destructive` stays the token for
+     irreversible actions, `negative` the one for a failed/refused state. Consumed by the `action`
+     variants of button, badge and alert. */
+  --color-positive: oklch(0.542 0.133 155.4); /* green/600 */
+  --color-positive-foreground: oklch(0.985 0.003 264.5); /* gray/50 */
+  --color-negative: oklch(0.493 0.146 23.3); /* red/600 */
+  --color-negative-foreground: oklch(0.985 0.003 264.5); /* gray/50 */
+  --color-warning: oklch(0.682 0.122 69.4); /* amber/500 */
+  --color-warning-foreground: oklch(0.208 0.04 265.8); /* gray/950 */
 
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);

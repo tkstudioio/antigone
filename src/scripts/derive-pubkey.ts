@@ -3,7 +3,7 @@
  * as `ADMIN_PUBKEY`) from the admin's mnemonic + passphrase WITHOUT putting the mnemonic on the
  * server. Run it on your own machine, never on the host:
  *
- *   DERIVE_MNEMONIC="word1 ... word12" DERIVE_PASSPHRASE="your 13th word" yarn derive:pubkey
+ *   DERIVE_MNEMONIC="word1 ... word12" DERIVE_PASSPHRASE="your 13th word" pnpm derive:pubkey
  *
  * The secrets are read ONLY from the environment of this invocation (never from `.env`) and are
  * never written anywhere; only the public key is printed. The derivation is the same one the
@@ -17,7 +17,7 @@ const passphrase = process.env.DERIVE_PASSPHRASE ?? "";
 
 if (!mnemonic) {
   console.error(
-    'Missing DERIVE_MNEMONIC. Usage: DERIVE_MNEMONIC="word1 ... word12" DERIVE_PASSPHRASE="..." yarn derive:pubkey'
+    'Missing DERIVE_MNEMONIC. Usage: DERIVE_MNEMONIC="word1 ... word12" DERIVE_PASSPHRASE="..." pnpm derive:pubkey'
   );
   process.exit(1);
 }

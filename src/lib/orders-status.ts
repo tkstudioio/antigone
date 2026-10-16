@@ -4,13 +4,13 @@ import type { ConclusionStatus, OrderStatus } from "@/db/enums";
 export type { ConclusionStatus, OrderStatus };
 
 export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
-  pending: "In attesa",
-  funded: "Finanziato",
-  completed: "Completato",
-  disputed: "In disputa",
-  refunded: "Rimborsato",
-  cancelled: "Annullato",
-  concluded: "Conclusa",
+  pending: "Pending",
+  funded: "Funded",
+  completed: "Completed",
+  disputed: "Disputed",
+  refunded: "Refunded",
+  cancelled: "Cancelled",
+  concluded: "Concluded",
 };
 
 export const ORDER_STATUS_BADGE: Record<OrderStatus, BadgeStyle> = {
@@ -24,9 +24,9 @@ export const ORDER_STATUS_BADGE: Record<OrderStatus, BadgeStyle> = {
 };
 
 export const CONCLUSION_STATUS_LABELS: Record<ConclusionStatus, string> = {
-  completed: "Completato",
-  partially_refunded: "Parzialmente rimborsato",
-  cancelled: "Annullato",
+  completed: "Completed",
+  partially_refunded: "Partially refunded",
+  cancelled: "Cancelled",
 };
 
 export const CONCLUSION_STATUS_BADGE: Record<ConclusionStatus, BadgeStyle> = {

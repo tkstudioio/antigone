@@ -15,6 +15,7 @@ import { db } from "@/db";
 import type { Prisma } from "@prisma/client";
 import { getEscrowFunding } from "@/lib/ark/funding";
 import type { SignedActionRecord } from "@/lib/auth/verify-signed-action";
+import { ORDER_PAYMENT_TTL_MINUTES } from "@/lib/backend/limits";
 import { mayAdminReadOrder } from "@/lib/backend/dispute-access";
 import { SIGNED_ACTION_SELECT, toSignedActionRecord } from "@/lib/backend/signed-action-record";
 
@@ -121,6 +122,11 @@ export type OrderDetail = {
   adminDisputeShare: number | null;
   createdAt: string;
   completedAt: string | null;
+  /**
+   * ISO deadline for paying an unpaid order (`createdAt` + `ORDER_PAYMENT_TTL_MINUTES`). Non-null
+   * only while the order is `pending` and the escrow is `awaitingFunds`/`partiallyFunded`.
+   */
+  paymentExpiresAt: string | null;
   escrowAddress: string | null;
   escrow: OrderEscrowDetail | null;
   chatId: number | null;
@@ -223,7 +229,17 @@ export type EscrowFundingResult = {
 };
 
 /** Warn this many ms before batch expiry (~3 days). */
-const EXPIRY_WARNING_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
+export const EXPIRY_WARNING_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
+
+/** Payment deadline of an unpaid order, or null once it is paid, cancelled or otherwise past that stage. */
+function paymentExpiresAtOf(
+  orderRow: { status: string; createdAt: Date },
+  escrowRow: { status: string } | null
+): string | null {
+  if (orderRow.status !== "pending") return null;
+  if (escrowRow?.status !== "awaitingFunds" && escrowRow?.status !== "partiallyFunded") return null;
+  return new Date(orderRow.createdAt.getTime() + ORDER_PAYMENT_TTL_MINUTES * 60_000).toISOString();
+}
 
 export async function readEscrowFunding(params: {
   orderId: number;
@@ -233,14 +249,14 @@ export async function readEscrowFunding(params: {
   const { orderId, pubkey, isAdmin } = params;
 
   const orderRow = await db.order.findUnique({ where: { id: orderId } });
-  if (!orderRow) return { error: "Ordine non trovato", status: 404 };
+  if (!orderRow) return { error: "Order not found", status: 404 };
   if (!isAdmin && orderRow.buyerPubkey !== pubkey && orderRow.sellerPubkey !== pubkey) {
-    return { error: "Accesso non autorizzato", status: 403 };
+    return { error: "Unauthorized access", status: 403 };
   }
-  if (!orderRow.escrowAddress) return { error: "Escrow mancante", status: 409 };
+  if (!orderRow.escrowAddress) return { error: "Escrow missing", status: 409 };
 
   const escrow = await db.escrow.findUnique({ where: { address: orderRow.escrowAddress } });
-  if (!escrow) return { error: "Escrow non trovato", status: 404 };
+  if (!escrow) return { error: "Escrow not found", status: 404 };
 
   const { total, funded, soonestExpiry } = await getEscrowFunding(escrow.address, escrow.price);
   // Read-only sweep heuristic (NOT persisted here — `verifyEscrowFunding` owns the state transition):
@@ -588,6 +604,7 @@ export async function queryOrderDetailAsAdmin(params: {
     adminDisputeShare: orderRow.adminDisputeShare,
     createdAt: orderRow.createdAt.toISOString(),
     completedAt: orderRow.completedAt ? orderRow.completedAt.toISOString() : null,
+    paymentExpiresAt: paymentExpiresAtOf(orderRow, escrowRow),
     escrowAddress: orderRow.escrowAddress,
     escrow,
     chatId: orderRow.chat?.id ?? null,
@@ -703,6 +720,7 @@ export async function queryOrderDetail(params: {
     adminDisputeShare: orderRow.adminDisputeShare,
     createdAt: orderRow.createdAt.toISOString(),
     completedAt: orderRow.completedAt ? orderRow.completedAt.toISOString() : null,
+    paymentExpiresAt: paymentExpiresAtOf(orderRow, escrowRow),
     escrowAddress: orderRow.escrowAddress,
     escrow,
     chatId: orderRow.chat?.id ?? null,
